@@ -1,0 +1,190 @@
+{
+  "results": [
+    {
+      "object": "page",
+      "id": "aaa11111-1111-1111-1111-111111111111",
+      "url": "https://www.notion.so/aaa111111111111111111111111111111",
+      "properties": {
+        "Name": {
+          "id": "title",
+          "type": "title",
+          "title": [{"type": "text", "plain_text": "Deploy SHIR VM to Azure"}]
+        },
+        "Type": {
+          "id": "t1",
+          "type": "select",
+          "select": {"name": "Task", "color": "pink"}
+        },
+        "Status": {
+          "id": "s1",
+          "type": "status",
+          "status": {"name": "In Progress", "color": "blue"}
+        },
+        "Priority": {
+          "id": "p1",
+          "type": "select",
+          "select": {"name": "P1", "color": "orange"}
+        },
+        "Estimate (hrs)": {
+          "id": "e1",
+          "type": "number",
+          "number": 4.0
+        },
+        "Owner": {
+          "id": "o1",
+          "type": "people",
+          "people": [{"object": "user", "id": "user-001", "name": "Nathan Teuber"}]
+        },
+        "Due date": {
+          "id": "d1",
+          "type": "date",
+          "date": {"start": "2026-03-28", "end": null}
+        },
+        "Phase/Sprint": {
+          "id": "ps1",
+          "type": "relation",
+          "relation": [{"id": "spr11111-1111-1111-1111-111111111111"}]
+        },
+        "Dependencies": {
+          "id": "dep1",
+          "type": "relation",
+          "relation": [{"id": "bbb22222-2222-2222-2222-222222222222"}]
+        },
+        "Parent Epic": {
+          "id": "pe1",
+          "type": "relation",
+          "relation": [{"id": "epc11111-1111-1111-1111-111111111111"}]
+        },
+        "Child Work Items": {
+          "id": "cwi1",
+          "type": "relation",
+          "relation": []
+        },
+        "Decisions (ADRs)": {
+          "id": "adr1",
+          "type": "relation",
+          "relation": [{"id": "dec11111-1111-1111-1111-111111111111"}]
+        },
+        "Docs & Specs": {
+          "id": "ds1",
+          "type": "relation",
+          "relation": [{"id": "doc11111-1111-1111-1111-111111111111"}]
+        },
+        "Risks & Issues": {
+          "id": "ri1",
+          "type": "relation",
+          "relation": [{"id": "rsk11111-1111-1111-1111-111111111111"}]
+        },
+        "Definition of Done": {
+          "id": "dod1",
+          "type": "rich_text",
+          "rich_text": [{"type": "text", "plain_text": "VM deployed and SHIR registered in ADF."}]
+        },
+        "Links": {
+          "id": "l1",
+          "type": "url",
+          "url": "https://dev.azure.com/project/wiki"
+        },
+        "Has High Risk?": {
+          "id": "hr1",
+          "type": "formula",
+          "formula": {"type": "boolean", "boolean": true}
+        }
+      }
+    },
+    {
+      "object": "page",
+      "id": "bbb22222-2222-2222-2222-222222222222",
+      "url": "https://www.notion.so/bbb222222222222222222222222222222",
+      "properties": {
+        "Name": {
+          "id": "title",
+          "type": "title",
+          "title": [{"type": "text", "plain_text": "Configure VNet and subnets"}]
+        },
+        "Type": {
+          "id": "t1",
+          "type": "select",
+          "select": {"name": "Task", "color": "pink"}
+        },
+        "Status": {
+          "id": "s1",
+          "type": "status",
+          "status": {"name": "Done", "color": "green"}
+        },
+        "Priority": {
+          "id": "p1",
+          "type": "select",
+          "select": {"name": "P0", "color": "red"}
+        },
+        "Estimate (hrs)": {
+          "id": "e1",
+          "type": "number",
+          "number": 2.0
+        },
+        "Owner": {
+          "id": "o1",
+          "type": "people",
+          "people": [{"object": "user", "id": "user-001", "name": "Nathan Teuber"}]
+        },
+        "Due date": {
+          "id": "d1",
+          "type": "date",
+          "date": null
+        },
+        "Phase/Sprint": {
+          "id": "ps1",
+          "type": "relation",
+          "relation": [{"id": "spr11111-1111-1111-1111-111111111111"}]
+        },
+        "Dependencies": {
+          "id": "dep1",
+          "type": "relation",
+          "relation": []
+        },
+        "Parent Epic": {
+          "id": "pe1",
+          "type": "relation",
+          "relation": []
+        },
+        "Child Work Items": {
+          "id": "cwi1",
+          "type": "relation",
+          "relation": []
+        },
+        "Decisions (ADRs)": {
+          "id": "adr1",
+          "type": "relation",
+          "relation": []
+        },
+        "Docs & Specs": {
+          "id": "ds1",
+          "type": "relation",
+          "relation": []
+        },
+        "Risks & Issues": {
+          "id": "ri1",
+          "type": "relation",
+          "relation": []
+        },
+        "Definition of Done": {
+          "id": "dod1",
+          "type": "rich_text",
+          "rich_text": []
+        },
+        "Links": {
+          "id": "l1",
+          "type": "url",
+          "url": null
+        },
+        "Has High Risk?": {
+          "id": "hr1",
+          "type": "formula",
+          "formula": {"type": "boolean", "boolean": false}
+        }
+      }
+    }
+  ],
+  "has_more": false,
+  "next_cursor": null
+}

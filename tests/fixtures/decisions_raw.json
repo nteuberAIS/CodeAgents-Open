@@ -1,0 +1,53 @@
+{
+  "results": [
+    {
+      "object": "page",
+      "id": "dec11111-1111-1111-1111-111111111111",
+      "url": "https://www.notion.so/dec111111111111111111111111111111",
+      "properties": {
+        "Title": {
+          "id": "title",
+          "type": "title",
+          "title": [{"type": "text", "plain_text": "ADR-004: SSRS VM Authentication via Entra + KCD"}]
+        },
+        "ADR ID": {
+          "id": "aid1",
+          "type": "rich_text",
+          "rich_text": [{"type": "text", "plain_text": "ADR-004"}]
+        },
+        "Status": {
+          "id": "s1",
+          "type": "select",
+          "select": {"name": "Accepted", "color": "green"}
+        },
+        "Date": {
+          "id": "d1",
+          "type": "date",
+          "date": {"start": "2026-02-15", "end": null}
+        },
+        "Related Work Items": {
+          "id": "rwi1",
+          "type": "relation",
+          "relation": [{"id": "aaa11111-1111-1111-1111-111111111111"}]
+        },
+        "Related Docs": {
+          "id": "rd1",
+          "type": "relation",
+          "relation": [{"id": "doc11111-1111-1111-1111-111111111111"}]
+        },
+        "Supersedes / Superseded by": {
+          "id": "ssb1",
+          "type": "relation",
+          "relation": []
+        },
+        "Supersedes / Superseded by (backlink)": {
+          "id": "ssb2",
+          "type": "relation",
+          "relation": []
+        }
+      }
+    }
+  ],
+  "has_more": false,
+  "next_cursor": null
+}
