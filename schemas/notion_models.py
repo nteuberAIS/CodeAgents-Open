@@ -7,6 +7,8 @@ UUID strings; resolution (ID → name) is handled by the sync tool.
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -139,3 +141,28 @@ class NotionSnapshot(BaseModel):
     decisions: list[Decision]
     risks: list[RiskIssue]
     meta: SyncMeta
+
+
+# ---------------------------------------------------------------------------
+# Local write-back (Phase 2c)
+# ---------------------------------------------------------------------------
+
+class PendingChange(BaseModel):
+    """A single tracked mutation to a local Notion entity."""
+
+    timestamp: str                        # ISO timestamp of when change was made
+    action: str                           # "update" or "create"
+    entity_type: str                      # "work_item", "sprint", "doc", "decision", "risk"
+    entity_id: str                        # notion_id (existing) or generated UUID (new)
+    field: str | None = None              # Field that changed (None for "create")
+    old_value: Any = None                 # Previous value (None for "create")
+    new_value: Any = None                 # New value (None for "create" — full entity in entity_snapshot)
+    entity_snapshot: dict | None = None   # Full entity state after change (for creates)
+
+
+class ChangeLog(BaseModel):
+    """Collection of pending changes not yet pushed to cloud Notion."""
+
+    changes: list[PendingChange] = []
+    created_at: str | None = None         # When changelog was started
+    last_modified: str | None = None      # When last change was recorded

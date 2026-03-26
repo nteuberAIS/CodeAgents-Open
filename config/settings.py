@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     # -- Tool registry --
     tool_registry: dict[str, str] = {
         "notion": "tools.notion_tool.NotionTool",
+        "notion_write": "tools.notion_write_tool.NotionWriteTool",
         "github": "tools.github_tool.GitHubTool",
         "azdevops": "tools.azdevops_tool.AzDevOpsTool",
     }
