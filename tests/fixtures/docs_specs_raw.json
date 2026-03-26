@@ -1,0 +1,76 @@
+{
+  "results": [
+    {
+      "object": "page",
+      "id": "doc11111-1111-1111-1111-111111111111",
+      "url": "https://www.notion.so/doc111111111111111111111111111111",
+      "properties": {
+        "Name": {
+          "id": "title",
+          "type": "title",
+          "title": [{"type": "text", "plain_text": "Network Egress & PE Rules"}]
+        },
+        "Doc Type": {
+          "id": "dt1",
+          "type": "select",
+          "select": {"name": "Architecture", "color": "orange"}
+        },
+        "Status": {
+          "id": "s1",
+          "type": "status",
+          "status": {"name": "Reviewed", "color": "blue"}
+        },
+        "Active": {
+          "id": "a1",
+          "type": "checkbox",
+          "checkbox": true
+        },
+        "Owner": {
+          "id": "o1",
+          "type": "people",
+          "people": [{"object": "user", "id": "user-001", "name": "Nathan Teuber"}]
+        },
+        "Tags": {
+          "id": "tg1",
+          "type": "multi_select",
+          "multi_select": [
+            {"name": "Networking", "color": "green"},
+            {"name": "Security", "color": "yellow"}
+          ]
+        },
+        "Last Reviewed": {
+          "id": "lr1",
+          "type": "date",
+          "date": {"start": "2026-03-15", "end": null}
+        },
+        "Deprecated": {
+          "id": "dep1",
+          "type": "date",
+          "date": null
+        },
+        "Related Work Items": {
+          "id": "rwi1",
+          "type": "relation",
+          "relation": [{"id": "aaa11111-1111-1111-1111-111111111111"}]
+        },
+        "Decisions (ADRs)": {
+          "id": "adr1",
+          "type": "relation",
+          "relation": [{"id": "dec11111-1111-1111-1111-111111111111"}]
+        },
+        "Related Phase/Sprint": {
+          "id": "rps1",
+          "type": "relation",
+          "relation": [{"id": "spr11111-1111-1111-1111-111111111111"}]
+        },
+        "Supersedes": {
+          "id": "sup1",
+          "type": "relation",
+          "relation": []
+        }
+      }
+    }
+  ],
+  "has_more": false,
+  "next_cursor": null
+}

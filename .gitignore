@@ -29,3 +29,6 @@ Thumbs.db
 
 # Ollama model cache (if local)
 models/
+
+# Local Notion sync data
+data/

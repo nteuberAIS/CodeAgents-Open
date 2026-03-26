@@ -21,8 +21,9 @@ class BaseAgent(ABC):
 
     name: str = "base"
 
-    def __init__(self, llm: ChatOllama) -> None:
+    def __init__(self, llm: ChatOllama, context: dict | None = None) -> None:
         self.llm = llm
+        self.context = context
         # Future: self.tools = []          — bound tool instances
         # Future: self.memory = None       — conversation / retrieval memory
         # Future: self.max_iterations = 5  — reflection loop cap (kill rabbit holes)
