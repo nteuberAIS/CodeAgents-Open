@@ -8,11 +8,33 @@
 - [x] SprintPlanner agent (LLM → JSON plan)
 - [x] CLI entry point with agent selection
 
-## Phase 2: Tools & Notion Sync
-- [ ] Notion API tool — read/write sprint databases
-- [ ] Git tool — Azure DevOps PR creation, branch management
-- [ ] Tool registry auto-loading in agents
-- [ ] SprintPlanner writes plans to Notion (not just console)
+## Phase 2a: Notion Read-Only Sync ✓
+- [x] Pydantic models for all 5 Notion databases (`schemas/notion_models.py`)
+- [x] NotionTool with paginated sync, property extractors, mappers (`tools/notion_tool.py`)
+- [x] CLI `sync` subcommand with `--dry-run` support
+- [x] Local JSON snapshot storage (`data/notion/`)
+- [x] Test suite with fixtures (`test_notion_models.py`, `test_notion_tool.py`)
+
+## Phase 2b: Git Tool
+- [ ] Git tool — Azure DevOps (`az repos`) + GitHub (`gh`) CLI wrappers
+- [ ] Branch creation, commit, PR creation with human gates
+- [ ] Read-only operations first (list branches, PRs), then write
+
+## Phase 2c: Notion Write Tool
+- [ ] Extend NotionTool with create/update page capabilities
+- [ ] Human approval gate before cloud writes
+
+## Phase 2d: Wire Tools into Agents
+- [ ] Tool auto-loading from registry
+- [ ] SprintPlanner binds NotionTool + GitTool
+- [ ] SprintPlanner creates Notion pages and git branches as part of planning
+
+## Phase 2.5: Agent Quality Pass
+- [ ] Prompt engineering with few-shot examples
+- [ ] Context curation (filter/summarize Notion data for agents)
+- [ ] Model benchmarking (3-4 models on eval set)
+- [ ] Eval harness in `evals/` directory
+- [ ] Per-agent model overrides (`OLLAMA_MODEL_CODER` pattern)
 
 ## Phase 3: Multi-Agent Cascade
 - [ ] CoderAgent — generates code changes from sprint tasks
