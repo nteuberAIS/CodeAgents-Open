@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     # -- Tool registry --
     tool_registry: dict[str, str] = {
         "notion": "tools.notion_tool.NotionTool",
+        "github": "tools.github_tool.GitHubTool",
+        "azdevops": "tools.azdevops_tool.AzDevOpsTool",
     }
 
     # -- Notion (Phase 2a: read-only sync) --
@@ -45,10 +47,16 @@ class Settings(BaseSettings):
     # -- Local data directory --
     data_dir: Path = Path("data")
 
+    # -- GitHub (Phase 2b) --
+    github_repo_dir: str | None = None  # Path to local repo clone (default: current dir)
+
+    # -- Azure DevOps (Phase 2b) --
+    azure_devops_org_url: str | None = None   # https://dev.azure.com/your-org
+    azure_devops_project: str | None = None
+    azure_devops_repo: str | None = None
+
     # -- Future config hooks (uncomment as needed) --
     # rag_retriever_path: str | None = None        # Path to local Notion mirror / vector DB
-    # azure_devops_org_url: str | None = None       # https://dev.azure.com/your-org
-    # azure_devops_pat: str | None = None           # Personal access token
     # aider_binary: str = "aider"                   # Path to Aider CLI
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
