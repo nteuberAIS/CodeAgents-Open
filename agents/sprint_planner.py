@@ -3,11 +3,10 @@
 When local Notion data is available (via context injection), plans against
 real backlog data. Without context, falls back to LLM-generated tasks.
 
-Future enhancements (marked in comments):
-- RAG context injection from local Notion mirror
-- Tool calls to create Notion pages and git branches
-- LangGraph node registration for multi-agent cascade
-- Reflection/validation loop with iteration cap
+Post-planning execution:
+- If notion_write tool is bound: creates work items in local Notion snapshot
+- If a git tool is bound: creates sprint + task branches
+- Both are optional — agent degrades gracefully without tools
 """
 
 from __future__ import annotations
@@ -70,15 +69,32 @@ class SprintPlannerAgent(BaseAgent):
 
     name = "sprint_planner"
 
+    # Tools this agent can use
+    REQUIRED_TOOLS: list[str] = []  # None required — agent works without tools
+    OPTIONAL_TOOLS: list[str] = ["notion_write", "github", "azdevops"]
+
     def run(self, user_input: str) -> dict:
-        """Generate a sprint plan.
+        """Generate a sprint plan, optionally execute it.
 
         Args:
             user_input: e.g. "Plan sprint 8"
 
         Returns:
-            Parsed JSON sprint plan, or {"raw_output": ...} on parse failure.
+            Parsed JSON sprint plan with optional "execution" key if tools
+            are bound. Example:
+            {
+                "sprint": 8,
+                "goal": "...",
+                "tasks": [...],
+                "dependencies": [...],
+                "execution": {
+                    "notion_items_created": [...],
+                    "branches_created": [...],
+                    "errors": [...]
+                }
+            }
         """
+        # Phase 1: Generate plan via LLM
         system_content = SYSTEM_PROMPT
         if self.context:
             system_content += self._format_context()
@@ -90,8 +106,91 @@ class SprintPlannerAgent(BaseAgent):
 
         response = self.llm.invoke(messages)
         raw = response.content
+        plan = self._parse_response(raw)
 
-        return self._parse_response(raw)
+        # Phase 2: Execute plan if tools are available and plan parsed OK
+        if "parse_error" not in plan and self.tools:
+            plan["execution"] = self._execute_plan(plan)
+
+        return plan
+
+    def _execute_plan(self, plan: dict) -> dict:
+        """Execute a sprint plan by creating Notion items and git branches.
+
+        This is a best-effort operation — individual failures are captured
+        in the errors list, not raised.
+
+        Returns:
+            {
+                "notion_items_created": [...],
+                "branches_created": [...],
+                "errors": [...]
+            }
+        """
+        execution: dict = {
+            "notion_items_created": [],
+            "branches_created": [],
+            "errors": [],
+        }
+
+        sprint_number = plan.get("sprint")
+        tasks = plan.get("tasks", [])
+
+        # --- Create Notion work items ---
+        notion_write = self.get_tool("notion_write")
+        if notion_write:
+            for task in tasks:
+                try:
+                    item = notion_write.create_work_item(
+                        name=task["title"],
+                        type="Task",
+                        status=task.get("status", "todo"),
+                        estimate_hrs=task.get("estimate_hrs"),
+                    )
+                    execution["notion_items_created"].append({
+                        "task_id": task["id"],
+                        "notion_id": item.notion_id,
+                        "title": item.name,
+                    })
+                except Exception as e:
+                    execution["errors"].append(
+                        f"Notion create failed for {task.get('id', '?')}: {e}"
+                    )
+
+        # --- Create git branches ---
+        git_tool = self.get_tool("github") or self.get_tool("azdevops")
+        if git_tool and sprint_number:
+            # Create sprint branch first
+            try:
+                sprint_branch = git_tool.sprint_branch_name(sprint_number)
+                result = git_tool.create_branch(sprint_branch, from_ref="main")
+                execution["branches_created"].append({
+                    "task_id": None,
+                    "branch": sprint_branch,
+                    "success": result.success,
+                    "dry_run": result.dry_run,
+                })
+            except Exception as e:
+                execution["errors"].append(f"Sprint branch creation failed: {e}")
+
+            # Create task branches (from main, per project convention)
+            for task in tasks:
+                try:
+                    task_id = task.get("id", "")
+                    branch_name = git_tool.task_branch_name(sprint_number, task_id)
+                    result = git_tool.create_branch(branch_name, from_ref="main")
+                    execution["branches_created"].append({
+                        "task_id": task_id,
+                        "branch": branch_name,
+                        "success": result.success,
+                        "dry_run": result.dry_run,
+                    })
+                except Exception as e:
+                    execution["errors"].append(
+                        f"Branch creation failed for {task.get('id', '?')}: {e}"
+                    )
+
+        return execution
 
     def _format_context(self) -> str:
         """Format local Notion data as context for the LLM."""
@@ -167,17 +266,3 @@ class SprintPlannerAgent(BaseAgent):
             return json.loads(cleaned)
         except json.JSONDecodeError:
             return {"raw_output": raw, "parse_error": "LLM did not return valid JSON"}
-
-    # -- Future extension points --
-    #
-    # def _retrieve_context(self, query: str) -> str:
-    #     """Pull relevant docs from local Notion mirror via RAG retriever."""
-    #     pass
-    #
-    # def _create_notion_tasks(self, plan: dict):
-    #     """Push tasks to Notion database via tools.notion_tool."""
-    #     pass
-    #
-    # def _create_git_branches(self, plan: dict):
-    #     """Create feature branches in Azure DevOps via tools.git_tool."""
-    #     pass

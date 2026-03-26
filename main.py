@@ -6,11 +6,11 @@ Usage:
     python main.py run "Plan sprint 1.4"             # Run agent
     python main.py run "Plan sprint 1.4" --sync      # Sync first, then run
     python main.py run "Plan sprint 1.4" --dry-run   # Show what would happen
+    python main.py run "Plan sprint 1.4" --no-tools  # LLM planning only
 
 Future:
 - Agent chaining: Planner -> Coder -> Tester -> Updater
 - LangGraph workflow orchestration replaces sequential calls
-- Tool auto-loading from tool_registry
 """
 
 from __future__ import annotations
@@ -23,22 +23,53 @@ from config.settings import get_llm, get_settings, resolve_agent_class, resolve_
 
 
 def _load_notion_context(settings) -> dict | None:
-    """Try to load local Notion snapshot as agent context."""
+    """Try to load local Notion snapshot as agent context.
+
+    Prefers local snapshot (with pending changes applied) over cloud snapshot.
+    """
+    # Try local snapshot first (includes pending changes from Phase 2c)
+    try:
+        write_tool_cls = resolve_tool_class("notion_write", settings)
+        write_tool = write_tool_cls(settings=settings)
+        snapshot = write_tool.load_local_snapshot()
+        if snapshot:
+            return _snapshot_to_context(snapshot)
+    except Exception:
+        pass
+
+    # Fall back to cloud snapshot
     try:
         tool_cls = resolve_tool_class("notion", settings)
         tool = tool_cls(settings=settings)
         snapshot = tool.load_snapshot()
         if snapshot:
-            return {
-                "work_items": [wi.model_dump() for wi in snapshot.work_items],
-                "sprints": [s.model_dump() for s in snapshot.sprints],
-                "docs": [d.model_dump() for d in snapshot.docs],
-                "decisions": [d.model_dump() for d in snapshot.decisions],
-                "risks": [r.model_dump() for r in snapshot.risks],
-            }
+            return _snapshot_to_context(snapshot)
     except Exception as e:
         print(f"[Warning] Could not load Notion context: {e}")
     return None
+
+
+def _snapshot_to_context(snapshot) -> dict:
+    """Convert a NotionSnapshot to the context dict format agents expect."""
+    return {
+        "work_items": [wi.model_dump() for wi in snapshot.work_items],
+        "sprints": [s.model_dump() for s in snapshot.sprints],
+        "docs": [d.model_dump() for d in snapshot.docs],
+        "decisions": [d.model_dump() for d in snapshot.decisions],
+        "risks": [r.model_dump() for r in snapshot.risks],
+    }
+
+
+def _get_agent_tools(agent) -> list[str]:
+    """Get the list of tools an agent wants.
+
+    Combines REQUIRED_TOOLS + OPTIONAL_TOOLS if the agent declares them.
+    Falls back to empty list for agents that don't use tools.
+    """
+    tools: list[str] = []
+    tools.extend(getattr(agent, "REQUIRED_TOOLS", []))
+    tools.extend(getattr(agent, "OPTIONAL_TOOLS", []))
+    return tools
 
 
 def cmd_sync(args) -> None:
@@ -98,6 +129,15 @@ def cmd_run(args) -> None:
     llm = get_llm(settings)
     agent = agent_cls(llm=llm, context=context)
 
+    # Auto-bind tools (unless --no-tools)
+    if not args.no_tools:
+        tool_names = _get_agent_tools(agent)
+        if tool_names:
+            bind_results = agent.bind_tools(tool_names, settings, dry_run=args.dry_run)
+            for tool_name, success in bind_results.items():
+                status = "bound" if success else "unavailable"
+                print(f"[Tools] {tool_name}: {status}")
+
     print(f"[Agent: {agent.name}] Running with model: {settings.ollama_model}")
     if context:
         total = sum(len(v) for v in context.values())
@@ -154,6 +194,11 @@ def main() -> None:
         "--sync",
         action="store_true",
         help="Sync Notion databases before running the agent.",
+    )
+    run_parser.add_argument(
+        "--no-tools",
+        action="store_true",
+        help="Run agent without binding tools (LLM planning only).",
     )
 
     args = parser.parse_args()
