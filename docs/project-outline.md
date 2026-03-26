@@ -511,7 +511,11 @@ Mandatory approval before:
 | Phase | Focus                    | Status      |
 |-------|--------------------------|-------------|
 | 1     | Foundation               | Complete    |
-| 2     | Notion + Git Tools       | Not started |
+| 2a    | Notion Read-Only Sync    | Complete    |
+| 2b    | Git Tool                 | Not started |
+| 2c    | Notion Write Tool        | Not started |
+| 2d    | Wire Tools into Agents   | Not started |
+| 2.5   | Agent Quality Pass       | Not started |
 | 3     | Multi-Agent Cascade      | Not started |
 | 4     | RAG & Context            | Not started |
 | 5     | Code Tools (Aider/Cont.) | Not started |
@@ -539,7 +543,12 @@ These topics need further thought and are tracked in `dev-planning/`:
 | 1  | WSL2/Docker vs native Windows for container workflows?                   | 5+    | Low      | Open     |
 | 2  | Delta sync from Notion — polling interval?                               | 4     | Medium   | Open     |
 | 3  | Prompt versioning beyond git — eval harness?                             | 2     | Medium   | Deferred |
-| 4  | Which Notion databases are in scope (IDs, schemas)?                      | 2     | High     | Scoping  |
+| 4  | Which Notion databases are in scope (IDs, schemas)?                      | 2     | High     | Resolved |
+| 5  | Git tool must support both Azure DevOps (az repos) and GitHub (gh CLI) — abstraction layer needed? | 2b | High | Open |
+
+**#4 Resolved** — 5 databases synced in Phase 2a: Work Items, Phases & Sprints,
+Docs & Specs, Decisions (ADRs), Risks & Issues. DB IDs configured in
+`config/settings.py`, schemas in `schemas/notion_models.py`.
 
 Items resolved from prior version:
 - ~~State persistence~~ → Checkpoints per work item, expanding to per-node.

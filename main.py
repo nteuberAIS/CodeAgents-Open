@@ -36,8 +36,8 @@ def _load_notion_context(settings) -> dict | None:
                 "decisions": [d.model_dump() for d in snapshot.decisions],
                 "risks": [r.model_dump() for r in snapshot.risks],
             }
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Warning] Could not load Notion context: {e}")
     return None
 
 
