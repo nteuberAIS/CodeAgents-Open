@@ -18,52 +18,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents.base import BaseAgent
 
-SYSTEM_PROMPT = """\
-You are a Sprint Planner for a solo-developer data platform project.
-
-Given a sprint planning request, produce a JSON object with this exact schema:
-{
-  "sprint": <sprint number as integer>,
-  "goal": "<one-line sprint goal>",
-  "tasks": [
-    {
-      "id": "<short task ID like SP8-001>",
-      "title": "<task title>",
-      "description": "<brief description>",
-      "assignee": null,
-      "estimate_hrs": <number of hours>,
-      "status": "todo"
-    }
-  ],
-  "dependencies": [
-    {"from": "<task_id>", "to": "<task_id>", "type": "blocks"}
-  ]
-}
-
-Rules:
-- Generate 4-6 realistic tasks for a data platform project.
-- Use estimate_hrs (hours) for effort estimates, not story points.
-- Include 1-2 dependencies between tasks.
-- Return ONLY the JSON object, no markdown fences, no explanation.
-"""
-
-CONTEXT_TEMPLATE = """\
-
---- CURRENT BACKLOG (from Notion) ---
-
-Active Sprint: {sprint_name}
-Sprint Goal: {sprint_goal}
-Sprint Dates: {start_date} → {end_date}
-
-Work Items in this sprint:
-{work_items_summary}
-
-{extra_context}\
-Use the above backlog data to inform your sprint plan. Reference existing
-work item names where relevant. Prioritize items that are Ready or Backlog.
-"""
-
-
 class SprintPlannerAgent(BaseAgent):
     """Generates a structured sprint plan from a natural language prompt."""
 
@@ -72,6 +26,11 @@ class SprintPlannerAgent(BaseAgent):
     # Tools this agent can use
     REQUIRED_TOOLS: list[str] = []  # None required — agent works without tools
     OPTIONAL_TOOLS: list[str] = ["notion_write", "github", "azdevops"]
+
+    # Context curation — planner needs broad overview, short snippets
+    MAX_CONTENT_ITEMS: int = 5
+    MAX_CONTENT_CHARS: int = 6000
+    CONTENT_STATUSES: list[str] = ["Ready", "In Progress", "Backlog", "Active"]
 
     def run(self, user_input: str) -> dict:
         """Generate a sprint plan, optionally execute it.
@@ -95,7 +54,7 @@ class SprintPlannerAgent(BaseAgent):
             }
         """
         # Phase 1: Generate plan via LLM
-        system_content = SYSTEM_PROMPT
+        system_content = self.load_prompt("sprint_planner/system.j2")
         if self.context:
             system_content += self._format_context()
 
@@ -247,14 +206,44 @@ class SprintPlannerAgent(BaseAgent):
 
         extra_context = "\n\n".join(extra_parts) + "\n" if extra_parts else ""
 
-        return CONTEXT_TEMPLATE.format(
+        page_content_section = self._format_page_content()
+
+        return self.load_prompt(
+            "sprint_planner/context.j2",
             sprint_name=sprint_name,
             sprint_goal=sprint_goal,
             start_date=start_date,
             end_date=end_date,
             work_items_summary=work_items_summary,
             extra_context=extra_context,
+            page_content_section=page_content_section,
         )
+
+    def _format_page_content(self) -> str:
+        """Format loaded page content snippets for the LLM context."""
+        if not self.context:
+            return ""
+        page_content = self.context.get("page_content", {})
+        if not page_content:
+            return ""
+
+        lines = ["\n--- ITEM DETAILS (selected pages) ---\n"]
+        for notion_id, content in page_content.items():
+            name = self._resolve_entity_name(notion_id)
+            lines.append(f"### {name}")
+            lines.append(content)
+            lines.append("")
+        return "\n".join(lines)
+
+    def _resolve_entity_name(self, notion_id: str) -> str:
+        """Look up the display name for a notion_id across all entity types."""
+        if not self.context:
+            return notion_id
+        for key in ("work_items", "sprints", "docs", "decisions", "risks"):
+            for entity in self.context.get(key, []):
+                if entity.get("notion_id") == notion_id:
+                    return entity.get("name", notion_id)
+        return notion_id
 
     def _parse_response(self, raw: str) -> dict:
         """Parse LLM output as JSON with fallback."""

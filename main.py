@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from config.settings import get_llm, get_settings, resolve_agent_class, resolve_tool_class
 
@@ -97,9 +98,10 @@ def cmd_run(args) -> None:
     """Handle the 'run' subcommand."""
     settings = get_settings()
 
-    # Allow model override from CLI
+    # Allow model override from CLI (takes precedence over per-agent overrides)
     if args.model:
         settings.ollama_model = args.model
+        settings.agent_model_overrides.pop(args.agent, None)
 
     # Optional pre-sync
     if args.sync:
@@ -118,15 +120,24 @@ def cmd_run(args) -> None:
     if args.dry_run:
         print(f"[Dry-run] Would run agent '{args.agent}' with prompt: {args.prompt}")
         if context:
-            total = sum(len(v) for v in context.values())
-            print(f"[Dry-run] Context loaded: {total} items from local Notion data")
+            entity_count = sum(
+                len(v) for k, v in context.items()
+                if k != "page_content" and isinstance(v, list)
+            )
+            page_count = len(context.get("page_content", {}))
+            print(f"[Dry-run] Context loaded: {entity_count} items from local Notion data")
+            if page_count:
+                print(f"[Dry-run] Page content: {page_count} snippets loaded")
         else:
             print("[Dry-run] No local Notion data available — agent will generate tasks")
         return
 
-    # Resolve and instantiate the agent
+    # Resolve agent class and curate context (filter entities, load page content)
     agent_cls = resolve_agent_class(args.agent, settings)
-    llm = get_llm(settings)
+    content_dir = Path(settings.data_dir) / "notion" / "content"
+    context = agent_cls.curate_context(context, content_dir=content_dir)
+
+    llm = get_llm(settings, agent_name=args.agent)
     agent = agent_cls(llm=llm, context=context)
 
     # Auto-bind tools (unless --no-tools)
@@ -147,6 +158,36 @@ def cmd_run(args) -> None:
 
     result = agent.run(args.prompt)
     print(json.dumps(result, indent=2))
+
+
+def cmd_eval(args) -> None:
+    """Handle the 'eval' subcommand."""
+    from evals.runner import EvalRunner, resolve_eval_class
+
+    settings = get_settings()
+    if args.model:
+        settings.ollama_model = args.model
+
+    # Resolve eval suite
+    eval_cls = resolve_eval_class(args.agent)
+    eval_suite = eval_cls()
+
+    if args.dry_run:
+        print(f"[Eval] Agent: {args.agent} — {len(eval_suite.get_cases())} cases")
+        for case in eval_suite.get_cases():
+            print(f"  - {case.name}: {case.description}")
+        return
+
+    # Build agent factory
+    agent_cls = resolve_agent_class(args.agent, settings)
+    llm = get_llm(settings, agent_name=args.agent)
+
+    def agent_factory(context: dict | None):
+        return agent_cls(llm=llm, context=context)
+
+    runner = EvalRunner(eval_suite)
+    results = runner.run_all(agent_factory)
+    runner.print_report(results)
 
 
 def main() -> None:
@@ -201,12 +242,35 @@ def main() -> None:
         help="Run agent without binding tools (LLM planning only).",
     )
 
+    # -- eval subcommand --
+    eval_parser = subparsers.add_parser(
+        "eval",
+        help="Run agent evaluation suite.",
+    )
+    eval_parser.add_argument(
+        "--agent",
+        default="sprint_planner",
+        help="Agent to evaluate (must have an eval suite). Default: sprint_planner",
+    )
+    eval_parser.add_argument(
+        "--model",
+        default=None,
+        help="Override the Ollama model for benchmarking.",
+    )
+    eval_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show eval cases without running them.",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
         cmd_sync(args)
     elif args.command == "run":
         cmd_run(args)
+    elif args.command == "eval":
+        cmd_eval(args)
     else:
         parser.print_help()
         sys.exit(1)

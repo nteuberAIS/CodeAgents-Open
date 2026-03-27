@@ -193,3 +193,66 @@ class TestLoadNotionContext:
         context = _load_notion_context(settings)
 
         assert context is None
+
+
+# -- Tests for per-agent model overrides --
+
+
+class TestGetLlmModelOverrides:
+    """Tests for get_llm() per-agent model overrides."""
+
+    def test_default_model_when_no_agent_name(self):
+        from config.settings import get_llm
+
+        settings = _make_settings()
+        settings.ollama_model = "qwen2.5-coder:7b"
+        settings.ollama_base_url = "http://localhost:11434"
+        settings.ollama_temperature = 0.2
+        settings.agent_model_overrides = {}
+
+        llm = get_llm(settings)
+
+        assert llm.model == "qwen2.5-coder:7b"
+
+    def test_agent_override_picks_up_specific_model(self):
+        from config.settings import get_llm
+
+        settings = _make_settings()
+        settings.ollama_model = "qwen2.5-coder:7b"
+        settings.ollama_base_url = "http://localhost:11434"
+        settings.ollama_temperature = 0.2
+        settings.agent_model_overrides = {"sprint_planner": "mistral:7b"}
+
+        llm = get_llm(settings, agent_name="sprint_planner")
+
+        assert llm.model == "mistral:7b"
+
+    def test_falls_back_to_global_when_agent_not_in_overrides(self):
+        from config.settings import get_llm
+
+        settings = _make_settings()
+        settings.ollama_model = "qwen2.5-coder:7b"
+        settings.ollama_base_url = "http://localhost:11434"
+        settings.ollama_temperature = 0.2
+        settings.agent_model_overrides = {"coder": "deepseek:7b"}
+
+        llm = get_llm(settings, agent_name="sprint_planner")
+
+        assert llm.model == "qwen2.5-coder:7b"
+
+    def test_cli_model_overrides_per_agent_setting(self):
+        """Simulates --model CLI flag: sets ollama_model and clears override."""
+        from config.settings import get_llm
+
+        settings = _make_settings()
+        settings.ollama_base_url = "http://localhost:11434"
+        settings.ollama_temperature = 0.2
+        settings.agent_model_overrides = {"sprint_planner": "mistral:7b"}
+
+        # CLI --model flag sets global and clears agent override
+        settings.ollama_model = "llama3:8b"
+        settings.agent_model_overrides.pop("sprint_planner", None)
+
+        llm = get_llm(settings, agent_name="sprint_planner")
+
+        assert llm.model == "llama3:8b"

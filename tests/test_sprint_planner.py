@@ -286,6 +286,86 @@ class TestRun:
         assert result["dependencies"][0]["to"] == "SP8-001"
 
 
+class TestPromptExternalization:
+    """Tests for externalized Jinja2 prompt loading."""
+
+    def test_prompts_load_from_files(self):
+        from agents.base import BaseAgent
+
+        system = BaseAgent.load_prompt("sprint_planner/system.j2")
+        assert len(system) > 0
+        assert "Sprint Planner" in system
+
+    def test_context_template_loads(self):
+        from agents.base import BaseAgent
+
+        ctx = BaseAgent.load_prompt(
+            "sprint_planner/context.j2",
+            sprint_name="Sprint 8",
+            sprint_goal="Test goal",
+            start_date="2026-03-01",
+            end_date="2026-03-14",
+            work_items_summary="- item 1",
+            extra_context="",
+            page_content_section="",
+        )
+        assert "Sprint 8" in ctx
+        assert "Test goal" in ctx
+
+    def test_few_shots_in_system_message(self):
+        llm = _make_llm(VALID_PLAN_JSON)
+        agent = SprintPlannerAgent(llm=llm)
+        agent.run("Plan sprint 8")
+
+        system_msg = llm.invoke.call_args[0][0][0].content
+        assert "Example" in system_msg
+        assert "SP7-001" in system_msg
+
+    def test_system_prompt_has_json_schema(self):
+        from agents.base import BaseAgent
+
+        system = BaseAgent.load_prompt("sprint_planner/system.j2")
+        assert '"sprint"' in system
+        assert '"tasks"' in system
+        assert '"dependencies"' in system
+
+    def test_missing_template_raises(self):
+        from agents.base import BaseAgent
+        from jinja2 import TemplateNotFound
+
+        with pytest.raises(TemplateNotFound):
+            BaseAgent.load_prompt("nonexistent/missing.j2")
+
+
+class TestFormatPageContent:
+    """Tests for _format_page_content()."""
+
+    def test_empty_when_no_context(self):
+        agent = SprintPlannerAgent(llm=_make_llm(""), context=None)
+        assert agent._format_page_content() == ""
+
+    def test_empty_when_no_page_content_key(self):
+        ctx = _make_context()
+        agent = SprintPlannerAgent(llm=_make_llm(""), context=ctx)
+        assert agent._format_page_content() == ""
+
+    def test_formats_content_with_entity_names(self):
+        ctx = _make_context(work_items=[WORK_ITEMS[0]])
+        ctx["page_content"] = {"wi-001": "Some markdown content here."}
+        agent = SprintPlannerAgent(llm=_make_llm(""), context=ctx)
+        result = agent._format_page_content()
+        assert "Deploy VM" in result
+        assert "Some markdown content here." in result
+        assert "ITEM DETAILS" in result
+
+    def test_uses_notion_id_when_name_not_found(self):
+        ctx = _make_context()
+        ctx["page_content"] = {"unknown-id": "Content for unknown."}
+        agent = SprintPlannerAgent(llm=_make_llm(""), context=ctx)
+        result = agent._format_page_content()
+        assert "unknown-id" in result
+
+
 class TestRunIntegration:
     def test_end_to_end_with_context(self):
         llm = _make_llm(VALID_PLAN_JSON)
