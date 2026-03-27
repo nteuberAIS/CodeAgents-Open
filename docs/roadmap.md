@@ -49,12 +49,14 @@
 - [x] `has_content` field added to all entity models
 - [x] SyncMeta extended with content_counts, template_counts, templates list
 
-## Phase 2.5: Agent Quality Pass
-- [ ] Prompt engineering with few-shot examples
-- [ ] Context curation (filter/summarize Notion data for agents)
-- [ ] Model benchmarking (3-4 models on eval set)
-- [ ] Eval harness in `evals/` directory
-- [ ] Per-agent model overrides (`OLLAMA_MODEL_CODER` pattern)
+## Phase 2.5: Agent Quality Pass ✓
+- [x] Prompt externalization — Jinja2 templates in `prompts/` loaded via `BaseAgent.load_prompt()`
+- [x] Few-shot examples in `prompts/sprint_planner/few_shots.j2`
+- [x] Context curation — `BaseAgent.curate_context()` with per-agent filtering (status, item count, char budget)
+- [x] Page content injected into agent context from `data/notion/content/`
+- [x] Eval harness — generic `BaseEval` ABC + `EvalRunner` in `evals/`, SprintPlannerEval (3 cases, 7 criteria)
+- [x] Per-agent model overrides via `agent_model_overrides` dict in Settings
+- [x] Model benchmarking infrastructure ready (eval framework + per-agent overrides; multi-model comparison deferred)
 
 ## Phase 3: Multi-Agent Cascade
 - [ ] CoderAgent — generates code changes from sprint tasks
