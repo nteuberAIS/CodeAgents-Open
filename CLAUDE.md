@@ -10,7 +10,7 @@ Local, zero-cost AI agent system for sprint automation. Solo developer project.
 
 ## Project Structure
 - `agents/` — Agent classes inheriting `BaseAgent` (ABC with LLM injection)
-- `tools/` — External tool wrappers (Notion, future: git, Aider)
+- `tools/` — External tool wrappers (Notion sync, Notion write-back, Git providers, block renderer)
 - `schemas/` — Pydantic models (NOT `models/` — that's gitignored for Ollama cache)
 - `config/` — Settings, LLM factory, agent/tool registries
 - `data/notion/` — Local JSON snapshots from Notion sync
@@ -26,15 +26,20 @@ Local, zero-cost AI agent system for sprint automation. Solo developer project.
 
 ## Key Commands
 ```bash
-python main.py sync                    # Pull Notion DBs to local JSON
+python main.py sync                    # Pull Notion DBs + page content to local JSON
 python main.py sync --dry-run          # Check without writing
-python main.py run "Plan sprint 8"     # Run agent with prompt
+python main.py run "Plan sprint 8"     # Run agent with prompt (auto-binds tools)
 python main.py run "..." --sync        # Sync first, then run
-pytest tests/                          # Run all tests
+python main.py run "..." --no-tools    # LLM planning only, no tool execution
+python main.py run "..." --dry-run     # Show what would happen
+pytest tests/                          # Run all tests (266 tests)
 ```
 
 ## Current State
 - Phase 1 (Foundation): Complete
 - Phase 2a (Notion Read-Only Sync): Complete
-- Phase 2b (Git Tool): Not started
-- Working on: See docs/roadmap.md for full status
+- Phase 2b (Git Tool): Complete
+- Phase 2c (Notion Local Write-Back): Complete
+- Phase 2d (Wire Tools into Agents): Complete
+- Phase 2e (Page Content Sync): Complete
+- Next: Phase 2.5 (Agent Quality Pass) — see docs/roadmap.md
