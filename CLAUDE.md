@@ -14,6 +14,8 @@ Local, zero-cost AI agent system for sprint automation. Solo developer project.
 - `schemas/` — Pydantic models (NOT `models/` — that's gitignored for Ollama cache)
 - `config/` — Settings, LLM factory, agent/tool registries
 - `data/notion/` — Local JSON snapshots from Notion sync
+- `prompts/` — Jinja2 prompt templates per agent (e.g., `sprint_planner/system.j2`)
+- `evals/` — Eval framework: BaseEval ABC, EvalRunner, per-agent eval suites
 - `tests/` — pytest tests with fixtures in `tests/fixtures/`
 
 ## Conventions
@@ -23,6 +25,10 @@ Local, zero-cost AI agent system for sprint automation. Solo developer project.
 - **Local-first**: Agents read from local JSON snapshots, never write to cloud Notion during execution
 - **Human gates**: Destructive actions (git merge to main, Notion cloud write) always require approval
 - **Testing**: Mock external services (Notion client, Ollama). Use fixtures in `tests/fixtures/`
+- **Prompt templates**: Externalized to `prompts/{agent_name}/` as Jinja2 `.j2` files, loaded via `BaseAgent.load_prompt()`
+- **Context curation**: Agents declare `MAX_CONTENT_ITEMS`, `MAX_CONTENT_CHARS`, `CONTENT_STATUSES` class attrs; `BaseAgent.curate_context()` filters page content accordingly
+- **Eval framework**: Subclass `BaseEval` in `evals/`, register in `EVAL_REGISTRY` in `evals/runner.py`
+- **Per-agent models**: Override via `agent_model_overrides` dict in Settings (env: `AGENT_MODEL_OVERRIDES='{"sprint_planner":"mistral:7b"}'`)
 
 ## Key Commands
 ```bash
@@ -32,7 +38,10 @@ python main.py run "Plan sprint 8"     # Run agent with prompt (auto-binds tools
 python main.py run "..." --sync        # Sync first, then run
 python main.py run "..." --no-tools    # LLM planning only, no tool execution
 python main.py run "..." --dry-run     # Show what would happen
-pytest tests/                          # Run all tests (266 tests)
+python main.py eval                           # Run all evals (requires Ollama)
+python main.py eval --agent sprint_planner    # Run specific agent evals
+python main.py eval --model mistral:7b        # Override model for benchmarking
+pytest tests/                                 # Run all tests (340 tests)
 ```
 
 ## Current State
@@ -42,4 +51,5 @@ pytest tests/                          # Run all tests (266 tests)
 - Phase 2c (Notion Local Write-Back): Complete
 - Phase 2d (Wire Tools into Agents): Complete
 - Phase 2e (Page Content Sync): Complete
-- Next: Phase 2.5 (Agent Quality Pass) — see docs/roadmap.md
+- Phase 2.5 (Agent Quality Pass): Complete
+- Next: Phase 3 (Multi-Agent Cascade) — see docs/roadmap.md
