@@ -1,0 +1,595 @@
+{
+  "paragraph_basic": {
+    "id": "block-para-1",
+    "type": "paragraph",
+    "has_children": false,
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {"content": "Hello world", "link": null},
+          "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+          "plain_text": "Hello world"
+        }
+      ],
+      "color": "default"
+    }
+  },
+  "paragraph_empty": {
+    "id": "block-para-empty",
+    "type": "paragraph",
+    "has_children": false,
+    "paragraph": {
+      "rich_text": [],
+      "color": "default"
+    }
+  },
+  "paragraph_with_color": {
+    "id": "block-para-color",
+    "type": "paragraph",
+    "has_children": false,
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {"content": "Colored text", "link": null},
+          "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+          "plain_text": "Colored text"
+        }
+      ],
+      "color": "red"
+    }
+  },
+  "heading_1": {
+    "id": "block-h1",
+    "type": "heading_1",
+    "has_children": false,
+    "heading_1": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {"content": "Main Title", "link": null},
+          "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+          "plain_text": "Main Title"
+        }
+      ],
+      "color": "default"
+    }
+  },
+  "heading_2": {
+    "id": "block-h2",
+    "type": "heading_2",
+    "has_children": false,
+    "heading_2": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {"content": "Section Title", "link": null},
+          "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+          "plain_text": "Section Title"
+        }
+      ],
+      "color": "default"
+    }
+  },
+  "heading_3": {
+    "id": "block-h3",
+    "type": "heading_3",
+    "has_children": false,
+    "heading_3": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {"content": "Subsection", "link": null},
+          "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+          "plain_text": "Subsection"
+        }
+      ],
+      "color": "default"
+    }
+  },
+  "heading_with_color": {
+    "id": "block-h1-color",
+    "type": "heading_1",
+    "has_children": false,
+    "heading_1": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {"content": "Red Heading", "link": null},
+          "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+          "plain_text": "Red Heading"
+        }
+      ],
+      "color": "red"
+    }
+  },
+  "bulleted_list_item": {
+    "id": "block-bullet",
+    "type": "bulleted_list_item",
+    "has_children": false,
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {"content": "Bullet point", "link": null},
+          "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+          "plain_text": "Bullet point"
+        }
+      ],
+      "color": "default"
+    }
+  },
+  "numbered_list_item": {
+    "id": "block-num",
+    "type": "numbered_list_item",
+    "has_children": false,
+    "numbered_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {"content": "First item", "link": null},
+          "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+          "plain_text": "First item"
+        }
+      ],
+      "color": "default"
+    }
+  },
+  "to_do_unchecked": {
+    "id": "block-todo-1",
+    "type": "to_do",
+    "has_children": false,
+    "to_do": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {"content": "Task not done", "link": null},
+          "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+          "plain_text": "Task not done"
+        }
+      ],
+      "checked": false,
+      "color": "default"
+    }
+  },
+  "to_do_checked": {
+    "id": "block-todo-2",
+    "type": "to_do",
+    "has_children": false,
+    "to_do": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {"content": "Task completed", "link": null},
+          "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+          "plain_text": "Task completed"
+        }
+      ],
+      "checked": true,
+      "color": "default"
+    }
+  },
+  "toggle": {
+    "id": "block-toggle",
+    "type": "toggle",
+    "has_children": true,
+    "toggle": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {"content": "Click to expand", "link": null},
+          "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+          "plain_text": "Click to expand"
+        }
+      ],
+      "color": "default"
+    },
+    "children": [
+      {
+        "id": "block-toggle-child",
+        "type": "paragraph",
+        "has_children": false,
+        "paragraph": {
+          "rich_text": [
+            {
+              "type": "text",
+              "text": {"content": "Hidden content", "link": null},
+              "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+              "plain_text": "Hidden content"
+            }
+          ],
+          "color": "default"
+        }
+      }
+    ]
+  },
+  "callout": {
+    "id": "block-callout",
+    "type": "callout",
+    "has_children": true,
+    "callout": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {"content": "Important note", "link": null},
+          "annotations": {"bold": true, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+          "plain_text": "Important note"
+        }
+      ],
+      "color": "blue_bg",
+      "icon": {"type": "emoji", "emoji": "💡"}
+    },
+    "children": [
+      {
+        "id": "block-callout-child",
+        "type": "paragraph",
+        "has_children": false,
+        "paragraph": {
+          "rich_text": [
+            {
+              "type": "text",
+              "text": {"content": "Details here", "link": null},
+              "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+              "plain_text": "Details here"
+            }
+          ],
+          "color": "default"
+        }
+      }
+    ]
+  },
+  "quote": {
+    "id": "block-quote",
+    "type": "quote",
+    "has_children": false,
+    "quote": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {"content": "A wise quote", "link": null},
+          "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+          "plain_text": "A wise quote"
+        }
+      ],
+      "color": "default"
+    }
+  },
+  "code": {
+    "id": "block-code",
+    "type": "code",
+    "has_children": false,
+    "code": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {"content": "print('hello')", "link": null},
+          "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+          "plain_text": "print('hello')"
+        }
+      ],
+      "language": "python"
+    }
+  },
+  "divider": {
+    "id": "block-divider",
+    "type": "divider",
+    "has_children": false,
+    "divider": {}
+  },
+  "image_external": {
+    "id": "block-img-ext",
+    "type": "image",
+    "has_children": false,
+    "image": {
+      "type": "external",
+      "external": {"url": "https://example.com/image.png"},
+      "caption": [
+        {
+          "type": "text",
+          "text": {"content": "A diagram", "link": null},
+          "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+          "plain_text": "A diagram"
+        }
+      ]
+    }
+  },
+  "image_file": {
+    "id": "block-img-file",
+    "type": "image",
+    "has_children": false,
+    "image": {
+      "type": "file",
+      "file": {"url": "https://prod-files-secure.s3.us-west-2.amazonaws.com/image.png", "expiry_time": "2026-01-01T00:00:00.000Z"},
+      "caption": []
+    }
+  },
+  "bookmark": {
+    "id": "block-bookmark",
+    "type": "bookmark",
+    "has_children": false,
+    "bookmark": {
+      "url": "https://example.com/article",
+      "caption": [
+        {
+          "type": "text",
+          "text": {"content": "Useful article", "link": null},
+          "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+          "plain_text": "Useful article"
+        }
+      ]
+    }
+  },
+  "table": {
+    "id": "block-table",
+    "type": "table",
+    "has_children": true,
+    "table": {
+      "table_width": 2,
+      "has_column_header": true,
+      "has_row_header": false
+    },
+    "children": [
+      {
+        "id": "block-table-row-1",
+        "type": "table_row",
+        "table_row": {
+          "cells": [
+            [
+              {
+                "type": "text",
+                "text": {"content": "Header 1", "link": null},
+                "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+                "plain_text": "Header 1"
+              }
+            ],
+            [
+              {
+                "type": "text",
+                "text": {"content": "Header 2", "link": null},
+                "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+                "plain_text": "Header 2"
+              }
+            ]
+          ]
+        }
+      },
+      {
+        "id": "block-table-row-2",
+        "type": "table_row",
+        "table_row": {
+          "cells": [
+            [
+              {
+                "type": "text",
+                "text": {"content": "Cell A", "link": null},
+                "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+                "plain_text": "Cell A"
+              }
+            ],
+            [
+              {
+                "type": "text",
+                "text": {"content": "Cell B", "link": null},
+                "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+                "plain_text": "Cell B"
+              }
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "column_list": {
+    "id": "block-cols",
+    "type": "column_list",
+    "has_children": true,
+    "children": [
+      {
+        "id": "block-col-1",
+        "type": "column",
+        "has_children": true,
+        "children": [
+          {
+            "id": "block-col-1-para",
+            "type": "paragraph",
+            "has_children": false,
+            "paragraph": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {"content": "Left column", "link": null},
+                  "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+                  "plain_text": "Left column"
+                }
+              ],
+              "color": "default"
+            }
+          }
+        ]
+      },
+      {
+        "id": "block-col-2",
+        "type": "column",
+        "has_children": true,
+        "children": [
+          {
+            "id": "block-col-2-para",
+            "type": "paragraph",
+            "has_children": false,
+            "paragraph": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {"content": "Right column", "link": null},
+                  "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+                  "plain_text": "Right column"
+                }
+              ],
+              "color": "default"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "child_page": {
+    "id": "aaaa1111-bbbb-2222-cccc-333344445555",
+    "type": "child_page",
+    "has_children": true,
+    "child_page": {
+      "title": "Sub Page Title"
+    }
+  },
+  "child_database": {
+    "id": "dddd6666-eeee-7777-ffff-888899990000",
+    "type": "child_database",
+    "has_children": true,
+    "child_database": {
+      "title": "Embedded DB"
+    }
+  },
+  "equation_display": {
+    "id": "block-equation",
+    "type": "equation",
+    "has_children": false,
+    "equation": {
+      "expression": "E = mc^2"
+    }
+  },
+  "embed": {
+    "id": "block-embed",
+    "type": "embed",
+    "has_children": false,
+    "embed": {
+      "url": "https://example.com/embed",
+      "caption": []
+    }
+  },
+  "link_preview": {
+    "id": "block-lp",
+    "type": "link_preview",
+    "has_children": false,
+    "link_preview": {
+      "url": "https://example.com/preview"
+    }
+  },
+  "rich_text_bold": {
+    "type": "text",
+    "text": {"content": "bold text", "link": null},
+    "annotations": {"bold": true, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+    "plain_text": "bold text"
+  },
+  "rich_text_italic": {
+    "type": "text",
+    "text": {"content": "italic text", "link": null},
+    "annotations": {"bold": false, "italic": true, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+    "plain_text": "italic text"
+  },
+  "rich_text_code": {
+    "type": "text",
+    "text": {"content": "code text", "link": null},
+    "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": true, "underline": false, "color": "default"},
+    "plain_text": "code text"
+  },
+  "rich_text_strikethrough": {
+    "type": "text",
+    "text": {"content": "struck", "link": null},
+    "annotations": {"bold": false, "italic": false, "strikethrough": true, "code": false, "underline": false, "color": "default"},
+    "plain_text": "struck"
+  },
+  "rich_text_underline": {
+    "type": "text",
+    "text": {"content": "underlined", "link": null},
+    "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": true, "color": "default"},
+    "plain_text": "underlined"
+  },
+  "rich_text_bold_italic": {
+    "type": "text",
+    "text": {"content": "both", "link": null},
+    "annotations": {"bold": true, "italic": true, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+    "plain_text": "both"
+  },
+  "rich_text_link": {
+    "type": "text",
+    "text": {"content": "click here", "link": {"url": "https://example.com"}},
+    "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+    "plain_text": "click here"
+  },
+  "rich_text_mention_user": {
+    "type": "mention",
+    "mention": {
+      "type": "user",
+      "user": {"id": "1d2d872b-594c-813d-9bbb-00025fbef218", "object": "user"}
+    },
+    "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+    "plain_text": "@Nathan"
+  },
+  "rich_text_mention_page": {
+    "type": "mention",
+    "mention": {
+      "type": "page",
+      "page": {"id": "aabb1122-ccdd-3344-eeff-556677889900"}
+    },
+    "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+    "plain_text": "Page Reference"
+  },
+  "rich_text_mention_date": {
+    "type": "mention",
+    "mention": {
+      "type": "date",
+      "date": {"start": "2026-01-08", "end": null}
+    },
+    "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+    "plain_text": "2026-01-08"
+  },
+  "rich_text_equation": {
+    "type": "equation",
+    "equation": {"expression": "x^2 + y^2 = z^2"},
+    "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+    "plain_text": "x^2 + y^2 = z^2"
+  },
+  "synced_block": {
+    "id": "block-synced",
+    "type": "synced_block",
+    "has_children": true,
+    "synced_block": {
+      "synced_from": null
+    },
+    "children": [
+      {
+        "id": "block-synced-child",
+        "type": "paragraph",
+        "has_children": false,
+        "paragraph": {
+          "rich_text": [
+            {
+              "type": "text",
+              "text": {"content": "Synced content", "link": null},
+              "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+              "plain_text": "Synced content"
+            }
+          ],
+          "color": "default"
+        }
+      }
+    ]
+  },
+  "file_block": {
+    "id": "block-file",
+    "type": "file",
+    "has_children": false,
+    "file": {
+      "type": "external",
+      "external": {"url": "https://example.com/doc.pdf"},
+      "caption": [
+        {
+          "type": "text",
+          "text": {"content": "Important doc", "link": null},
+          "annotations": {"bold": false, "italic": false, "strikethrough": false, "code": false, "underline": false, "color": "default"},
+          "plain_text": "Important doc"
+        }
+      ]
+    }
+  }
+}

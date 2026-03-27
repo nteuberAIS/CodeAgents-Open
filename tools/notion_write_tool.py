@@ -47,12 +47,12 @@ _ENTITY_REGISTRY: dict[str, tuple[str, str, type[BaseModel]]] = {
 _ALLOWED_UPDATE_FIELDS: dict[str, set[str]] = {
     "work_item": {
         "status", "priority", "sprint_id", "estimate_hrs",
-        "owner", "due_date", "definition_of_done",
+        "owner", "due_date", "definition_of_done", "content",
     },
-    "sprint": {"status", "goal", "start_date", "end_date"},
-    "doc": {"status", "active", "owner", "tags", "last_reviewed"},
-    "decision": {"status", "date"},
-    "risk": {"status", "severity", "owner", "mitigation_plan", "next_review"},
+    "sprint": {"status", "goal", "start_date", "end_date", "content"},
+    "doc": {"status", "active", "owner", "tags", "last_reviewed", "content"},
+    "decision": {"status", "date", "content"},
+    "risk": {"status", "severity", "owner", "mitigation_plan", "next_review", "content"},
 }
 
 
@@ -335,6 +335,9 @@ class NotionWriteTool:
         self, entity_type: str, notion_id: str, fields: dict,
     ) -> BaseModel:
         """Generic update logic shared by all update_* methods."""
+        # Separate content from property fields
+        content = fields.pop("content", None)
+
         self._validate_update_fields(entity_type, fields)
         snapshot = self._get_current_snapshot()
         entity, entity_list = self._find_entity(snapshot, entity_type, notion_id)
@@ -361,12 +364,20 @@ class NotionWriteTool:
         entity_list[idx] = updated
 
         self._save_local_snapshot(snapshot)
+
+        # Handle content update separately (stored as .md file, not in JSON)
+        if content is not None:
+            self._update_content(entity_type, notion_id, content)
+
         return updated
 
     def _create_entity(
         self, entity_type: str, model_cls: type[BaseModel], fields: dict,
     ) -> BaseModel:
         """Generic create logic shared by all create_* methods."""
+        # Separate content from property fields
+        content = fields.pop("content", None)
+
         snapshot = self._get_current_snapshot()
         local_id = self._generate_local_id()
 
@@ -385,4 +396,48 @@ class NotionWriteTool:
         getattr(snapshot, attr_name).append(entity)
 
         self._save_local_snapshot(snapshot)
+
+        # Handle content if provided
+        if content is not None:
+            self._update_content(entity_type, local_id, content)
+
         return entity
+
+    # ------------------------------------------------------------------ #
+    #  Page content operations                                             #
+    # ------------------------------------------------------------------ #
+
+    def update_page_content(
+        self, entity_type: str, notion_id: str, content: str,
+    ) -> None:
+        """Update only the page content for an existing entity.
+
+        Writes the markdown to data/notion/content/{notion_id}.md and
+        records a pending change. Does not modify entity properties.
+
+        Raises NotionWriteError if entity not found.
+        """
+        snapshot = self._get_current_snapshot()
+        self._find_entity(snapshot, entity_type, notion_id)
+        self._update_content(entity_type, notion_id, content)
+
+    def _update_content(
+        self, entity_type: str, entity_id: str, content: str,
+    ) -> None:
+        """Write page content to local draft and record pending change."""
+        content_dir = self.data_dir / "content"
+        content_dir.mkdir(parents=True, exist_ok=True)
+
+        md_path = content_dir / f"{entity_id}.md"
+        md_path.write_text(content, encoding="utf-8")
+
+        change = PendingChange(
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            action="update",
+            entity_type=entity_type,
+            entity_id=entity_id,
+            field="content",
+            old_value=None,
+            new_value=content,
+        )
+        self._record_change(change)
