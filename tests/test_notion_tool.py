@@ -14,6 +14,9 @@ from tools.notion_tool import NotionSyncError, NotionTool
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
+# Empty blocks response for mocking blocks.children.list
+_EMPTY_BLOCKS = {"results": [], "has_more": False, "next_cursor": None}
+
 
 def _load_fixture(name: str) -> dict:
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
@@ -35,6 +38,20 @@ def _make_settings(**overrides):
     for k, v in defaults.items():
         setattr(settings, k, v)
     return settings
+
+
+def _setup_sync_mocks(mock_client, fixtures=None):
+    """Configure a mock client for sync tests (properties + empty blocks)."""
+    if fixtures is None:
+        fixtures = {
+            "wi-db-id": _load_fixture("work_items_raw.json"),
+            "sp-db-id": _load_fixture("sprints_raw.json"),
+            "doc-db-id": _load_fixture("docs_specs_raw.json"),
+            "dec-db-id": _load_fixture("decisions_raw.json"),
+            "rsk-db-id": _load_fixture("risks_issues_raw.json"),
+        }
+    mock_client.data_sources.query.side_effect = lambda **kw: fixtures[kw["data_source_id"]]
+    mock_client.blocks.children.list.return_value = _EMPTY_BLOCKS
 
 
 class TestNotionToolInit:
@@ -258,23 +275,10 @@ class TestSync:
     def test_sync_writes_files(self, mock_client_cls, tmp_path):
         settings = _make_settings(data_dir=tmp_path)
         mock_client = mock_client_cls.return_value
-
-        # Set up paginated responses for each DB
-        fixtures = {
-            "wi-db-id": _load_fixture("work_items_raw.json"),
-            "sp-db-id": _load_fixture("sprints_raw.json"),
-            "doc-db-id": _load_fixture("docs_specs_raw.json"),
-            "dec-db-id": _load_fixture("decisions_raw.json"),
-            "rsk-db-id": _load_fixture("risks_issues_raw.json"),
-        }
-
-        def mock_query(**kwargs):
-            db_id = kwargs["data_source_id"]
-            return fixtures[db_id]
-
-        mock_client.data_sources.query.side_effect = mock_query
+        _setup_sync_mocks(mock_client)
 
         tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0  # Disable rate limiting in tests
         meta = tool.sync()
 
         # Check files were created
@@ -298,21 +302,17 @@ class TestSync:
         assert len(items) == 2
         assert items[0]["name"] == "Deploy SHIR VM to Azure"
 
+        # Verify content directory was created
+        assert (notion_dir / "content").exists()
+
     @patch("tools.notion_tool.Client")
     def test_sync_dry_run_no_files(self, mock_client_cls, tmp_path):
         settings = _make_settings(data_dir=tmp_path)
         mock_client = mock_client_cls.return_value
-
-        fixtures = {
-            "wi-db-id": _load_fixture("work_items_raw.json"),
-            "sp-db-id": _load_fixture("sprints_raw.json"),
-            "doc-db-id": _load_fixture("docs_specs_raw.json"),
-            "dec-db-id": _load_fixture("decisions_raw.json"),
-            "rsk-db-id": _load_fixture("risks_issues_raw.json"),
-        }
-        mock_client.data_sources.query.side_effect = lambda **kw: fixtures[kw["data_source_id"]]
+        _setup_sync_mocks(mock_client)
 
         tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0
         meta = tool.sync(dry_run=True)
 
         assert meta.counts["work_items"] == 2
@@ -322,17 +322,10 @@ class TestSync:
     def test_load_snapshot_round_trip(self, mock_client_cls, tmp_path):
         settings = _make_settings(data_dir=tmp_path)
         mock_client = mock_client_cls.return_value
-
-        fixtures = {
-            "wi-db-id": _load_fixture("work_items_raw.json"),
-            "sp-db-id": _load_fixture("sprints_raw.json"),
-            "doc-db-id": _load_fixture("docs_specs_raw.json"),
-            "dec-db-id": _load_fixture("decisions_raw.json"),
-            "rsk-db-id": _load_fixture("risks_issues_raw.json"),
-        }
-        mock_client.data_sources.query.side_effect = lambda **kw: fixtures[kw["data_source_id"]]
+        _setup_sync_mocks(mock_client)
 
         tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0
         tool.sync()
 
         snapshot = tool.load_snapshot()
@@ -356,17 +349,10 @@ class TestQueryHelpers:
     def test_get_work_items_filter_by_status(self, mock_client_cls, tmp_path):
         settings = _make_settings(data_dir=tmp_path)
         mock_client = mock_client_cls.return_value
-
-        fixtures = {
-            "wi-db-id": _load_fixture("work_items_raw.json"),
-            "sp-db-id": _load_fixture("sprints_raw.json"),
-            "doc-db-id": _load_fixture("docs_specs_raw.json"),
-            "dec-db-id": _load_fixture("decisions_raw.json"),
-            "rsk-db-id": _load_fixture("risks_issues_raw.json"),
-        }
-        mock_client.data_sources.query.side_effect = lambda **kw: fixtures[kw["data_source_id"]]
+        _setup_sync_mocks(mock_client)
 
         tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0
         tool.sync()
 
         done_items = tool.get_work_items(status="Done")
@@ -380,17 +366,10 @@ class TestQueryHelpers:
     def test_get_active_sprint(self, mock_client_cls, tmp_path):
         settings = _make_settings(data_dir=tmp_path)
         mock_client = mock_client_cls.return_value
-
-        fixtures = {
-            "wi-db-id": _load_fixture("work_items_raw.json"),
-            "sp-db-id": _load_fixture("sprints_raw.json"),
-            "doc-db-id": _load_fixture("docs_specs_raw.json"),
-            "dec-db-id": _load_fixture("decisions_raw.json"),
-            "rsk-db-id": _load_fixture("risks_issues_raw.json"),
-        }
-        mock_client.data_sources.query.side_effect = lambda **kw: fixtures[kw["data_source_id"]]
+        _setup_sync_mocks(mock_client)
 
         tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0
         tool.sync()
 
         sprint = tool.get_active_sprint()
@@ -453,9 +432,355 @@ class TestPagination:
         mock_client.data_sources.query.side_effect = [page1, page2]
 
         tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0
         pages = tool._query_all_pages("test-db")
         assert len(pages) == 2
         assert mock_client.data_sources.query.call_count == 2
         # Second call should include start_cursor
         second_call_kwargs = mock_client.data_sources.query.call_args_list[1][1]
         assert second_call_kwargs["start_cursor"] == "cursor-abc"
+
+
+class TestFetchPageBlocks:
+    """Test _fetch_page_blocks with mocked blocks API."""
+
+    @patch("tools.notion_tool.Client")
+    def test_fetches_single_page_blocks(self, mock_client_cls):
+        settings = _make_settings()
+        mock_client = mock_client_cls.return_value
+        mock_client.blocks.children.list.return_value = {
+            "results": [
+                {"id": "b1", "type": "paragraph", "has_children": False,
+                 "paragraph": {"rich_text": [{"type": "text", "text": {"content": "Hello"}}], "color": "default"}},
+            ],
+            "has_more": False,
+            "next_cursor": None,
+        }
+
+        tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0
+        blocks = tool._fetch_page_blocks("page-id-1")
+
+        assert len(blocks) == 1
+        assert blocks[0]["type"] == "paragraph"
+        mock_client.blocks.children.list.assert_called_once()
+
+    @patch("tools.notion_tool.Client")
+    def test_handles_pagination(self, mock_client_cls):
+        settings = _make_settings()
+        mock_client = mock_client_cls.return_value
+
+        mock_client.blocks.children.list.side_effect = [
+            {"results": [{"id": "b1", "type": "paragraph", "has_children": False}],
+             "has_more": True, "next_cursor": "cur-1"},
+            {"results": [{"id": "b2", "type": "paragraph", "has_children": False}],
+             "has_more": False, "next_cursor": None},
+        ]
+
+        tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0
+        blocks = tool._fetch_page_blocks("page-id-1")
+
+        assert len(blocks) == 2
+        assert mock_client.blocks.children.list.call_count == 2
+
+    @patch("tools.notion_tool.Client")
+    def test_recursive_children(self, mock_client_cls):
+        settings = _make_settings()
+        mock_client = mock_client_cls.return_value
+
+        def mock_list(**kwargs):
+            block_id = kwargs["block_id"]
+            if block_id == "page-id-1":
+                return {
+                    "results": [
+                        {"id": "b1", "type": "callout", "has_children": True,
+                         "callout": {"rich_text": [], "color": "blue_bg"}},
+                    ],
+                    "has_more": False, "next_cursor": None,
+                }
+            if block_id == "b1":
+                return {
+                    "results": [
+                        {"id": "b1-child", "type": "paragraph", "has_children": False,
+                         "paragraph": {"rich_text": [], "color": "default"}},
+                    ],
+                    "has_more": False, "next_cursor": None,
+                }
+            return _EMPTY_BLOCKS
+
+        mock_client.blocks.children.list.side_effect = mock_list
+
+        tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0
+        blocks = tool._fetch_page_blocks("page-id-1")
+
+        assert len(blocks) == 1
+        assert "children" in blocks[0]
+        assert len(blocks[0]["children"]) == 1
+        assert blocks[0]["children"][0]["id"] == "b1-child"
+
+    @patch("tools.notion_tool.Client")
+    def test_depth_limit(self, mock_client_cls):
+        settings = _make_settings()
+        mock_client = mock_client_cls.return_value
+
+        # Should return empty at max_depth
+        tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0
+        blocks = tool._fetch_page_blocks("page-id", depth=4, max_depth=4)
+        assert blocks == []
+        mock_client.blocks.children.list.assert_not_called()
+
+    @patch("tools.notion_tool.Client")
+    def test_dedup_prevents_cycles(self, mock_client_cls):
+        settings = _make_settings()
+        mock_client = mock_client_cls.return_value
+
+        tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0
+        seen = {"already-seen-id"}
+        blocks = tool._fetch_page_blocks("already-seen-id", seen=seen)
+        assert blocks == []
+        mock_client.blocks.children.list.assert_not_called()
+
+    @patch("tools.notion_tool.Client")
+    def test_child_page_not_recursed(self, mock_client_cls):
+        settings = _make_settings()
+        mock_client = mock_client_cls.return_value
+
+        mock_client.blocks.children.list.return_value = {
+            "results": [
+                {"id": "cp1", "type": "child_page", "has_children": True,
+                 "child_page": {"title": "Sub Page"}},
+            ],
+            "has_more": False, "next_cursor": None,
+        }
+
+        tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0
+        blocks = tool._fetch_page_blocks("page-id")
+
+        assert len(blocks) == 1
+        assert "children" not in blocks[0]
+        # Only one call — child_page was not recursed
+        assert mock_client.blocks.children.list.call_count == 1
+
+    @patch("tools.notion_tool.Client")
+    def test_empty_page(self, mock_client_cls):
+        settings = _make_settings()
+        mock_client = mock_client_cls.return_value
+        mock_client.blocks.children.list.return_value = _EMPTY_BLOCKS
+
+        tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0
+        blocks = tool._fetch_page_blocks("page-id")
+        assert blocks == []
+
+
+class TestSyncWithContent:
+    """Test sync() with page content fetching."""
+
+    @patch("tools.notion_tool.Client")
+    def test_sync_creates_content_directory(self, mock_client_cls, tmp_path):
+        settings = _make_settings(data_dir=tmp_path)
+        mock_client = mock_client_cls.return_value
+        _setup_sync_mocks(mock_client)
+
+        tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0
+        tool.sync()
+
+        assert (tmp_path / "notion" / "content").exists()
+
+    @patch("tools.notion_tool.Client")
+    def test_sync_writes_markdown_files(self, mock_client_cls, tmp_path):
+        settings = _make_settings(data_dir=tmp_path)
+        mock_client = mock_client_cls.return_value
+        _setup_sync_mocks(mock_client)
+
+        # Override blocks for one specific page to return content
+        original_blocks_list = mock_client.blocks.children.list.return_value
+        def mock_blocks(**kwargs):
+            if kwargs["block_id"] == "aaa11111-1111-1111-1111-111111111111":
+                return {
+                    "results": [
+                        {"id": "b1", "type": "heading_1", "has_children": False,
+                         "heading_1": {"rich_text": [{"type": "text", "text": {"content": "Goal"}, "annotations": {"bold": False, "italic": False, "strikethrough": False, "code": False, "underline": False, "color": "default"}}], "color": "default"}},
+                        {"id": "b2", "type": "paragraph", "has_children": False,
+                         "paragraph": {"rich_text": [{"type": "text", "text": {"content": "Deploy SHIR"}, "annotations": {"bold": False, "italic": False, "strikethrough": False, "code": False, "underline": False, "color": "default"}}], "color": "default"}},
+                    ],
+                    "has_more": False, "next_cursor": None,
+                }
+            return _EMPTY_BLOCKS
+
+        mock_client.blocks.children.list.side_effect = mock_blocks
+
+        tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0
+        meta = tool.sync()
+
+        # Check markdown file was written
+        md_path = tmp_path / "notion" / "content" / "aaa11111-1111-1111-1111-111111111111.md"
+        assert md_path.exists()
+        content = md_path.read_text(encoding="utf-8")
+        assert "# Goal" in content
+        assert "Deploy SHIR" in content
+
+        # Check content_counts
+        assert meta.content_counts["work_items"] >= 1
+
+    @patch("tools.notion_tool.Client")
+    def test_sync_meta_includes_content_counts(self, mock_client_cls, tmp_path):
+        settings = _make_settings(data_dir=tmp_path)
+        mock_client = mock_client_cls.return_value
+        _setup_sync_mocks(mock_client)
+
+        tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0
+        meta = tool.sync()
+
+        assert "work_items" in meta.content_counts
+        assert "sprints" in meta.content_counts
+
+    @patch("tools.notion_tool.Client")
+    def test_load_page_content(self, mock_client_cls, tmp_path):
+        settings = _make_settings(data_dir=tmp_path)
+        mock_client = mock_client_cls.return_value
+
+        tool = NotionTool(settings)
+        # Write a test content file
+        content_dir = tmp_path / "notion" / "content"
+        content_dir.mkdir(parents=True)
+        (content_dir / "test-id.md").write_text("# Test\nContent here", encoding="utf-8")
+
+        result = tool.load_page_content("test-id")
+        assert result == "# Test\nContent here"
+
+    @patch("tools.notion_tool.Client")
+    def test_load_page_content_nonexistent(self, mock_client_cls, tmp_path):
+        settings = _make_settings(data_dir=tmp_path)
+        tool = NotionTool(settings)
+        assert tool.load_page_content("nonexistent-id") is None
+
+
+class TestTemplateSync:
+    """Test template identification and storage."""
+
+    @patch("tools.notion_tool.Client")
+    def test_templates_filtered_from_entity_lists(self, mock_client_cls, tmp_path):
+        settings = _make_settings(data_dir=tmp_path)
+        mock_client = mock_client_cls.return_value
+
+        # Create fixture with a template item
+        wi_fixture = _load_fixture("work_items_raw.json")
+        template_page = {
+            "id": "tmpl-1111-1111-1111-111111111111",
+            "url": "https://www.notion.so/tmpl1111",
+            "properties": {
+                "Name": {"type": "title", "title": [{"plain_text": "Epic template"}]},
+                "Type": {"type": "select", "select": {"name": "Epic"}},
+                "Status": {"type": "status", "status": {"name": "Backlog"}},
+                "Priority": {"type": "select", "select": None},
+                "Estimate (hrs)": {"type": "number", "number": None},
+                "Owner": {"type": "people", "people": []},
+                "Due date": {"type": "date", "date": None},
+                "Phase/Sprint": {"type": "relation", "relation": []},
+                "Dependencies": {"type": "relation", "relation": []},
+                "Parent Epic": {"type": "relation", "relation": []},
+                "Child Work Items": {"type": "relation", "relation": []},
+                "Decisions (ADRs)": {"type": "relation", "relation": []},
+                "Docs & Specs": {"type": "relation", "relation": []},
+                "Risks & Issues": {"type": "relation", "relation": []},
+                "Definition of Done": {"type": "rich_text", "rich_text": []},
+                "Links": {"type": "url", "url": None},
+            },
+        }
+        wi_fixture["results"].append(template_page)
+
+        fixtures = {
+            "wi-db-id": wi_fixture,
+            "sp-db-id": _load_fixture("sprints_raw.json"),
+            "doc-db-id": _load_fixture("docs_specs_raw.json"),
+            "dec-db-id": _load_fixture("decisions_raw.json"),
+            "rsk-db-id": _load_fixture("risks_issues_raw.json"),
+        }
+        mock_client.data_sources.query.side_effect = lambda **kw: fixtures[kw["data_source_id"]]
+        mock_client.blocks.children.list.return_value = _EMPTY_BLOCKS
+
+        tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0
+        meta = tool.sync()
+
+        # Template should be filtered out — only 2 work items, not 3
+        assert meta.counts["work_items"] == 2
+
+        # Template should be recorded in metadata
+        assert meta.template_counts["work_items"] == 1
+        assert len(meta.templates) == 1
+        assert meta.templates[0].title == "Epic template"
+
+        # Template directory should be created
+        assert (tmp_path / "notion" / "templates" / "work_items").exists()
+
+    @patch("tools.notion_tool.Client")
+    def test_template_content_written(self, mock_client_cls, tmp_path):
+        settings = _make_settings(data_dir=tmp_path)
+        mock_client = mock_client_cls.return_value
+
+        wi_fixture = _load_fixture("work_items_raw.json")
+        template_page = {
+            "id": "tmpl-2222-2222-2222-222222222222",
+            "url": "https://www.notion.so/tmpl2222",
+            "properties": {
+                "Name": {"type": "title", "title": [{"plain_text": "Bug template"}]},
+                "Type": {"type": "select", "select": {"name": "Bug"}},
+                "Status": {"type": "status", "status": {"name": "Backlog"}},
+                "Priority": {"type": "select", "select": None},
+                "Estimate (hrs)": {"type": "number", "number": None},
+                "Owner": {"type": "people", "people": []},
+                "Due date": {"type": "date", "date": None},
+                "Phase/Sprint": {"type": "relation", "relation": []},
+                "Dependencies": {"type": "relation", "relation": []},
+                "Parent Epic": {"type": "relation", "relation": []},
+                "Child Work Items": {"type": "relation", "relation": []},
+                "Decisions (ADRs)": {"type": "relation", "relation": []},
+                "Docs & Specs": {"type": "relation", "relation": []},
+                "Risks & Issues": {"type": "relation", "relation": []},
+                "Definition of Done": {"type": "rich_text", "rich_text": []},
+                "Links": {"type": "url", "url": None},
+            },
+        }
+        wi_fixture["results"].append(template_page)
+
+        fixtures = {
+            "wi-db-id": wi_fixture,
+            "sp-db-id": _load_fixture("sprints_raw.json"),
+            "doc-db-id": _load_fixture("docs_specs_raw.json"),
+            "dec-db-id": _load_fixture("decisions_raw.json"),
+            "rsk-db-id": _load_fixture("risks_issues_raw.json"),
+        }
+        mock_client.data_sources.query.side_effect = lambda **kw: fixtures[kw["data_source_id"]]
+
+        def mock_blocks(**kwargs):
+            if kwargs["block_id"] == "tmpl-2222-2222-2222-222222222222":
+                return {
+                    "results": [
+                        {"id": "tb1", "type": "heading_1", "has_children": False,
+                         "heading_1": {"rich_text": [{"type": "text", "text": {"content": "Bug Report"}, "annotations": {"bold": False, "italic": False, "strikethrough": False, "code": False, "underline": False, "color": "default"}}], "color": "default"}},
+                    ],
+                    "has_more": False, "next_cursor": None,
+                }
+            return _EMPTY_BLOCKS
+
+        mock_client.blocks.children.list.side_effect = mock_blocks
+
+        tool = NotionTool(settings)
+        tool._REQUEST_INTERVAL = 0
+        tool.sync()
+
+        # Check template file was written
+        tmpl_files = list((tmp_path / "notion" / "templates" / "work_items").glob("*.md"))
+        assert len(tmpl_files) == 1
+        content = tmpl_files[0].read_text(encoding="utf-8")
+        assert "# Bug Report" in content

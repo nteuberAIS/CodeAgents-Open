@@ -576,3 +576,100 @@ class TestLocalIdGeneration:
         tool = NotionWriteTool(_make_settings(tmp_path))
         ids = {tool._generate_local_id() for _ in range(100)}
         assert len(ids) == 100
+
+
+# ---------------------------------------------------------------------------
+# Tests — Page content operations
+# ---------------------------------------------------------------------------
+
+class TestUpdatePageContent:
+    def test_writes_content_file(self, tmp_path):
+        _seed_cloud_snapshot(tmp_path)
+        tool = NotionWriteTool(_make_settings(tmp_path))
+        tool.update_page_content("work_item", "wi-001", "# Goal\nDeploy SHIR")
+
+        md_path = tmp_path / "notion" / "content" / "wi-001.md"
+        assert md_path.exists()
+        assert md_path.read_text(encoding="utf-8") == "# Goal\nDeploy SHIR"
+
+    def test_records_pending_change(self, tmp_path):
+        _seed_cloud_snapshot(tmp_path)
+        tool = NotionWriteTool(_make_settings(tmp_path))
+        tool.update_page_content("work_item", "wi-001", "## New content")
+
+        changelog = tool.load_pending_changes()
+        content_changes = [c for c in changelog.changes if c.field == "content"]
+        assert len(content_changes) == 1
+        assert content_changes[0].entity_id == "wi-001"
+        assert content_changes[0].new_value == "## New content"
+        assert content_changes[0].old_value is None
+
+    def test_raises_for_nonexistent_entity(self, tmp_path):
+        _seed_cloud_snapshot(tmp_path)
+        tool = NotionWriteTool(_make_settings(tmp_path))
+        with pytest.raises(NotionWriteError, match="not found"):
+            tool.update_page_content("work_item", "nonexistent-id", "content")
+
+    def test_content_via_update_entity(self, tmp_path):
+        _seed_cloud_snapshot(tmp_path)
+        tool = NotionWriteTool(_make_settings(tmp_path))
+
+        # Update both status and content in one call
+        updated = tool.update_work_item(
+            "wi-001", status="Done", content="# Done\nTask completed."
+        )
+        assert updated.status == "Done"
+
+        # Content should be written to file
+        md_path = tmp_path / "notion" / "content" / "wi-001.md"
+        assert md_path.exists()
+        assert "# Done" in md_path.read_text(encoding="utf-8")
+
+        # Pending changes should include both status and content
+        changelog = tool.load_pending_changes()
+        fields = [c.field for c in changelog.changes]
+        assert "status" in fields
+        assert "content" in fields
+
+    def test_content_only_update(self, tmp_path):
+        _seed_cloud_snapshot(tmp_path)
+        tool = NotionWriteTool(_make_settings(tmp_path))
+
+        # Update only content, no property changes
+        updated = tool.update_work_item("wi-001", content="# Just content")
+        assert updated.status == "Ready"  # unchanged
+
+        md_path = tmp_path / "notion" / "content" / "wi-001.md"
+        assert md_path.exists()
+
+    def test_create_with_content(self, tmp_path):
+        _seed_cloud_snapshot(tmp_path)
+        tool = NotionWriteTool(_make_settings(tmp_path))
+
+        wi = tool.create_work_item(
+            "New Task",
+            status="Ready",
+            content="## Description\nNew task body",
+        )
+        assert wi.notion_id.startswith("local-")
+
+        # Content file should exist
+        md_path = tmp_path / "notion" / "content" / f"{wi.notion_id}.md"
+        assert md_path.exists()
+        assert "## Description" in md_path.read_text(encoding="utf-8")
+
+    def test_content_overwrites_previous(self, tmp_path):
+        _seed_cloud_snapshot(tmp_path)
+        tool = NotionWriteTool(_make_settings(tmp_path))
+
+        tool.update_page_content("work_item", "wi-001", "First version")
+        tool.update_page_content("work_item", "wi-001", "Second version")
+
+        md_path = tmp_path / "notion" / "content" / "wi-001.md"
+        content = md_path.read_text(encoding="utf-8")
+        assert content == "Second version"
+
+        # Both changes should be recorded
+        changelog = tool.load_pending_changes()
+        content_changes = [c for c in changelog.changes if c.field == "content"]
+        assert len(content_changes) == 2

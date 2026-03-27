@@ -36,7 +36,8 @@ class WorkItem(BaseModel):
     risk_ids: list[str] = []                 # → Risks & Issues UUIDs
     definition_of_done: str | None = None
     links: str | None = None                 # URL
-    notion_url: str | None = None            # Notion page URL
+    notion_url: str | None = None
+    has_content: bool = False                # True if content/*.md exists            # Notion page URL
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +57,7 @@ class Sprint(BaseModel):
     end_date: str | None = None              # ISO date string
     work_item_ids: list[str] = []            # → Work Items UUIDs
     risk_ids: list[str] = []                 # → Risks & Issues UUIDs
+    has_content: bool = False                # True if content/*.md exists
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +81,7 @@ class DocSpec(BaseModel):
     sprint_ids: list[str] = []               # → Phases & Sprints UUIDs
     supersedes_ids: list[str] = []           # → Docs & Specs UUIDs (self)
     notion_url: str | None = None
+    has_content: bool = False                # True if content/*.md exists
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +101,7 @@ class Decision(BaseModel):
     supersedes_ids: list[str] = []           # → Decisions UUIDs (self)
     superseded_by_ids: list[str] = []        # → Decisions UUIDs (self, backlink)
     notion_url: str | None = None
+    has_content: bool = False                # True if content/*.md exists
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +122,20 @@ class RiskIssue(BaseModel):
     work_item_ids: list[str] = []            # → Work Items UUIDs
     sprint_id: str | None = None             # → Phases & Sprints UUID (limit 1)
     notion_url: str | None = None
+    has_content: bool = False                # True if content/*.md exists
+
+
+# ---------------------------------------------------------------------------
+# Template metadata
+# ---------------------------------------------------------------------------
+
+class TemplateInfo(BaseModel):
+    """Metadata about a database template."""
+
+    notion_id: str
+    title: str
+    db_name: str                             # Which database this belongs to
+    filename: str                            # e.g. "epic_template.md"
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +148,9 @@ class SyncMeta(BaseModel):
     synced_at: str                           # ISO timestamp
     databases: dict[str, str]                # name → collection ID
     counts: dict[str, int]                   # name → page count
+    content_counts: dict[str, int] = {}      # name → pages with content synced
+    template_counts: dict[str, int] = {}     # name → template count per db
+    templates: list[TemplateInfo] = []       # All template metadata
 
 
 class NotionSnapshot(BaseModel):

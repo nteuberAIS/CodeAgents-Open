@@ -8,6 +8,9 @@ no writes to cloud Notion occur in this phase.
 from __future__ import annotations
 
 import json
+import logging
+import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -22,8 +25,12 @@ from schemas.notion_models import (
     RiskIssue,
     Sprint,
     SyncMeta,
+    TemplateInfo,
     WorkItem,
 )
+from tools.notion_renderer import render_blocks
+
+logger = logging.getLogger(__name__)
 
 
 class NotionSyncError(Exception):
@@ -42,6 +49,8 @@ class NotionTool:
         ("risks",       "notion_risks_db",        RiskIssue,  "_map_risk",       "risks_issues.json"),
     ]
 
+    _REQUEST_INTERVAL: float = 0.34  # ~3 requests/second
+
     def __init__(self, settings: Any) -> None:
         if not settings.notion_api_key:
             raise NotionSyncError(
@@ -50,13 +59,14 @@ class NotionTool:
         self.client = Client(auth=settings.notion_api_key)
         self.data_dir: Path = Path(settings.data_dir) / "notion"
         self.settings = settings
+        self._last_request_time: float = 0.0
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def sync(self, dry_run: bool = False) -> SyncMeta:
-        """Full pull of all 5 databases → local JSON files.
+        """Full pull of all 5 databases → local JSON files + page content.
 
         Args:
             dry_run: If True, query Notion for counts but don't write files.
@@ -68,6 +78,7 @@ class NotionTool:
         counts: dict[str, int] = {}
         db_ids: dict[str, str] = {}
 
+        # Step 1: Query all pages (properties)
         for name, settings_attr, model_cls, mapper_name, filename in self._DB_REGISTRY:
             db_id = getattr(self.settings, settings_attr)
             db_ids[name] = db_id
@@ -84,16 +95,123 @@ class NotionTool:
             results[name] = items
             counts[name] = len(items)
 
+        # Step 2: Identify and filter templates
+        template_ids: set[str] = set()
+        all_templates: list[TemplateInfo] = []
+        template_counts: dict[str, int] = {}
+
+        for name, _, _, _, _ in self._DB_REGISTRY:
+            db_templates = self._identify_templates(results[name])
+            template_counts[name] = len(db_templates)
+            for tmpl in db_templates:
+                template_ids.add(tmpl.notion_id)
+                all_templates.append(tmpl)
+
+            # Filter templates out of entity lists
+            results[name] = [
+                item for item in results[name]
+                if item.notion_id not in template_ids
+            ]
+            counts[name] = len(results[name])
+
+        # Step 3: Fetch page content and render to markdown
+        content_counts: dict[str, int] = {}
+        seen_ids: set[str] = set()
+        sub_page_queue: list[str] = []
+
+        for name, _, _, _, _ in self._DB_REGISTRY:
+            content_count = 0
+            for item in results[name]:
+                if item.notion_id in seen_ids:
+                    continue
+                seen_ids.add(item.notion_id)
+
+                try:
+                    blocks = self._fetch_page_blocks(item.notion_id)
+                except APIResponseError:
+                    logger.warning("Failed to fetch blocks for %s", item.notion_id)
+                    blocks = []
+
+                markdown = render_blocks(blocks)
+                if markdown.strip():
+                    item.has_content = True
+                    content_count += 1
+
+                    # Discover child pages
+                    for block in blocks:
+                        if block.get("type") == "child_page":
+                            child_id = block.get("id", "")
+                            if child_id and child_id not in seen_ids:
+                                sub_page_queue.append(child_id)
+
+                if not dry_run:
+                    content_dir = self.data_dir / "content"
+                    content_dir.mkdir(parents=True, exist_ok=True)
+                    md_path = content_dir / f"{item.notion_id}.md"
+                    md_path.write_text(markdown, encoding="utf-8")
+
+            content_counts[name] = content_count
+
+        # Step 3b: Fetch sub-page content (recursive, depth-limited)
+        sub_page_depth = 0
+        while sub_page_queue and sub_page_depth < 4:
+            next_queue: list[str] = []
+            for sub_id in sub_page_queue:
+                if sub_id in seen_ids:
+                    continue
+                seen_ids.add(sub_id)
+                try:
+                    blocks = self._fetch_page_blocks(sub_id)
+                except APIResponseError:
+                    logger.warning("Failed to fetch sub-page blocks for %s", sub_id)
+                    blocks = []
+
+                markdown = render_blocks(blocks)
+                if not dry_run:
+                    content_dir = self.data_dir / "content"
+                    content_dir.mkdir(parents=True, exist_ok=True)
+                    md_path = content_dir / f"{sub_id}.md"
+                    md_path.write_text(markdown, encoding="utf-8")
+
+                # Discover deeper child pages
+                for block in blocks:
+                    if block.get("type") == "child_page":
+                        child_id = block.get("id", "")
+                        if child_id and child_id not in seen_ids:
+                            next_queue.append(child_id)
+
+            sub_page_queue = next_queue
+            sub_page_depth += 1
+
+        # Step 3c: Fetch and store template content
+        if not dry_run:
+            for tmpl in all_templates:
+                try:
+                    blocks = self._fetch_page_blocks(tmpl.notion_id)
+                except APIResponseError:
+                    logger.warning("Failed to fetch template blocks for %s", tmpl.notion_id)
+                    blocks = []
+
+                markdown = render_blocks(blocks)
+                tmpl_dir = self.data_dir / "templates" / tmpl.db_name
+                tmpl_dir.mkdir(parents=True, exist_ok=True)
+                md_path = tmpl_dir / tmpl.filename
+                md_path.write_text(markdown, encoding="utf-8")
+
+        # Step 4: Build metadata
         meta = SyncMeta(
             synced_at=datetime.now(timezone.utc).isoformat(),
             databases=db_ids,
             counts=counts,
+            content_counts=content_counts,
+            template_counts=template_counts,
+            templates=all_templates,
         )
 
         if dry_run:
             return meta
 
-        # Write JSON files
+        # Step 5: Write JSON files
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
         for name, _, model_cls, _, filename in self._DB_REGISTRY:
@@ -168,9 +286,41 @@ class NotionTool:
                 return s
         return None
 
+    def load_page_content(self, notion_id: str) -> str | None:
+        """Load the markdown content for a specific page from disk.
+
+        Returns None if no content file exists.
+        """
+        path = self.data_dir / "content" / f"{notion_id}.md"
+        if not path.exists():
+            return None
+        return path.read_text(encoding="utf-8")
+
+    def load_template(self, db_name: str, filename: str) -> str | None:
+        """Load a template's markdown content from disk.
+
+        Args:
+            db_name: Database name (e.g. "work_items").
+            filename: Template filename (e.g. "epic_template.md").
+
+        Returns None if template file doesn't exist.
+        """
+        path = self.data_dir / "templates" / db_name / filename
+        if not path.exists():
+            return None
+        return path.read_text(encoding="utf-8")
+
     # ------------------------------------------------------------------
     # Notion API helpers
     # ------------------------------------------------------------------
+
+    def _rate_limit(self) -> None:
+        """Enforce Notion API rate limit of ~3 requests/second."""
+        now = time.monotonic()
+        elapsed = now - self._last_request_time
+        if elapsed < self._REQUEST_INTERVAL:
+            time.sleep(self._REQUEST_INTERVAL - elapsed)
+        self._last_request_time = time.monotonic()
 
     def _query_all_pages(self, data_source_id: str) -> list[dict]:
         """Paginated data_sources.query() — fetches all pages."""
@@ -182,6 +332,7 @@ class NotionTool:
             if cursor:
                 kwargs["start_cursor"] = cursor
 
+            self._rate_limit()
             response = self.client.data_sources.query(**kwargs)
             pages.extend(response["results"])
 
@@ -190,6 +341,95 @@ class NotionTool:
             cursor = response.get("next_cursor")
 
         return pages
+
+    def _fetch_page_blocks(
+        self,
+        block_id: str,
+        depth: int = 0,
+        max_depth: int = 4,
+        seen: set[str] | None = None,
+    ) -> list[dict]:
+        """Recursively fetch all blocks for a page/block.
+
+        Args:
+            block_id: Page ID or parent block ID.
+            depth: Current nesting depth.
+            max_depth: Maximum recursion depth for nested blocks.
+            seen: Set of visited block IDs for cycle prevention.
+
+        Returns:
+            List of block dicts with children populated inline.
+        """
+        if depth >= max_depth:
+            return []
+
+        if seen is None:
+            seen = set()
+        if block_id in seen:
+            return []
+        seen.add(block_id)
+
+        blocks: list[dict] = []
+        cursor: str | None = None
+
+        while True:
+            kwargs: dict[str, Any] = {"block_id": block_id, "page_size": 100}
+            if cursor:
+                kwargs["start_cursor"] = cursor
+
+            self._rate_limit()
+            response = self.client.blocks.children.list(**kwargs)
+            blocks.extend(response["results"])
+
+            if not response.get("has_more"):
+                break
+            cursor = response.get("next_cursor")
+
+        # Recursively fetch children for blocks that have them
+        for block in blocks:
+            if block.get("has_children") and block.get("type") not in (
+                "child_page", "child_database",
+            ):
+                block["children"] = self._fetch_page_blocks(
+                    block["id"], depth + 1, max_depth, seen,
+                )
+
+        return blocks
+
+    def _identify_templates(self, items: list) -> list[TemplateInfo]:
+        """Identify template pages in a list of entities by name heuristic.
+
+        Templates are pages whose title ends with 'template' (case-insensitive).
+
+        Returns:
+            List of TemplateInfo for identified templates.
+        """
+        templates: list[TemplateInfo] = []
+        for item in items:
+            name = getattr(item, "name", "") or getattr(item, "title", "") or ""
+            if re.search(r"\btemplate\b", name, re.IGNORECASE):
+                # Determine db_name from item type
+                db_name = self._entity_db_name(item)
+                safe_name = re.sub(r"[^\w\s-]", "_", name).strip().replace(" ", "_").lower()
+                templates.append(TemplateInfo(
+                    notion_id=item.notion_id,
+                    title=name,
+                    db_name=db_name,
+                    filename=f"{safe_name}.md",
+                ))
+        return templates
+
+    @staticmethod
+    def _entity_db_name(item: Any) -> str:
+        """Map an entity model instance to its database name."""
+        type_map = {
+            "WorkItem": "work_items",
+            "Sprint": "sprints",
+            "DocSpec": "docs",
+            "Decision": "decisions",
+            "RiskIssue": "risks",
+        }
+        return type_map.get(type(item).__name__, "unknown")
 
     # ------------------------------------------------------------------
     # Property extraction helpers
