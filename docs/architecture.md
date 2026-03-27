@@ -9,13 +9,29 @@ operation with a clear upgrade path to multi-agent workflows.
 
 ```
 CodeAgents-Open/
-├── agents/                 # Agent definitions
-│   ├── base.py             # BaseAgent ABC (all agents inherit)
-│   └── sprint_planner.py   # Phase 1: Sprint planning agent
-├── tools/                  # External tool wrappers (Phase 2+)
-│   └── __init__.py         # Future: git, Notion, Aider tools
+├── agents/
+│   ├── base.py             # BaseAgent ABC (tool binding, LLM injection)
+│   └── sprint_planner.py   # Sprint planning agent (plan + execute)
+├── tools/
+│   ├── notion_tool.py      # Notion read-only sync (properties + page content)
+│   ├── notion_write_tool.py # Local write-back (pending changes pattern)
+│   ├── notion_renderer.py  # Block-to-markdown converter (30+ block types)
+│   ├── git_tool.py         # BaseGitTool ABC (shared CLI execution)
+│   ├── github_tool.py      # GitHub provider (gh CLI)
+│   └── azdevops_tool.py    # Azure DevOps provider (az repos CLI)
+├── schemas/
+│   ├── notion_models.py    # Notion entity models (5 entities + sync metadata)
+│   └── git_models.py       # Git models (Branch, PullRequest, CommitInfo)
 ├── config/
 │   └── settings.py         # Pydantic settings, LLM factory, registries
+├── data/
+│   └── notion/
+│       ├── *.json           # Cloud snapshots (never modified)
+│       ├── content/*.md     # Page content as markdown
+│       ├── templates/       # Database templates
+│       ├── pending_changes.json  # Local mutation changelog
+│       └── local_snapshot.json   # Merged local state
+├── tests/                  # 266 tests, all mocked
 ├── docs/                   # Project documentation
 ├── main.py                 # CLI entry point
 └── requirements.txt
@@ -31,13 +47,46 @@ import paths. `resolve_agent_class()` dynamically imports them. To add a new age
 2. Add `"my_agent": "agents.my_agent.MyAgent"` to `agent_registry`
 3. Run with `python main.py --agent my_agent "your prompt"`
 
-### Tool Registry (Phase 2+)
-Same pattern as agents. Tools will be loadable classes that agents can bind via
-`agent.bind_tools([...])`. Planned tools:
-- `git_tool` — Azure DevOps PRs, branch management
-- `notion_tool` — Notion API read/write
-- `aider_tool` — Aider CLI for code edits
+### Tool Registry
+Same pattern as agents. Tools are loadable classes that agents bind via
+`agent.bind_tools([...])`. Implemented tools:
+- `notion` — Notion API sync (properties + page content + templates)
+- `notion_write` — Local write-back with pending changes pattern
+- `github` — GitHub CLI (`gh`) for branches, PRs, commits
+- `azdevops` — Azure DevOps CLI (`az repos`) for branches, PRs, commits
+
+Planned:
+- `aider_tool` — Aider CLI for AI-assisted code edits
 - `continue_tool` — Continue.dev IDE integration
+
+### Page Content Architecture
+
+Notion database records have two layers of data:
+1. **Properties** — structured fields (status, priority, dates, relations)
+2. **Page content** — the body of the page (headings, paragraphs, checklists, etc.)
+
+The sync pipeline fetches both:
+- Properties → JSON files (`data/notion/*.json`)
+- Page content → Markdown files (`data/notion/content/{page_id}.md`)
+
+The block-to-markdown renderer (`tools/notion_renderer.py`) supports 30+ Notion
+block types including paragraphs, headings, lists, code blocks, callouts, toggles,
+tables, columns, images, and child page references.
+
+Sub-pages are discovered during sync and recursively fetched (depth-limited to 4
+levels with cycle prevention). Templates are identified by name pattern and stored
+separately in `data/notion/templates/{db_name}/`.
+
+### Local Write-Back Pattern
+
+All Notion mutations are local-only. The write tool (`tools/notion_write_tool.py`)
+maintains two files:
+- `pending_changes.json` — append-only changelog of every mutation
+- `local_snapshot.json` — full merged state (cloud snapshot + local changes)
+
+Cloud snapshot files from sync are NEVER modified. This ensures a clean audit
+trail and safe rollback. Cloud push is a separate, gated operation (not yet
+implemented — requires human approval).
 
 ### LLM Factory
 `get_llm()` creates a `ChatOllama` instance from settings. All config is
