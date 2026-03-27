@@ -32,3 +32,6 @@ models/
 
 # Local Notion sync data
 data/
+
+# Eval run outputs
+evals/results/

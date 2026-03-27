@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen2.5-coder:7b"
     ollama_temperature: float = 0.2
 
+    # Per-agent model overrides (env: AGENT_MODEL_OVERRIDES='{"sprint_planner":"mistral:7b"}')
+    agent_model_overrides: dict[str, str] = {}
+
     # -- Agent registry --
     # Maps agent name -> dotted import path to its class.
     # Future agents: "coder": "agents.coder.CoderAgent", etc.
@@ -69,15 +72,21 @@ def get_settings() -> Settings:
     return Settings()
 
 
-def get_llm(settings: Settings | None = None) -> ChatOllama:
+def get_llm(settings: Settings | None = None, agent_name: str | None = None) -> ChatOllama:
     """Create a ChatOllama instance from settings.
+
+    If agent_name is provided and has an entry in agent_model_overrides,
+    that model is used instead of the default ollama_model.
 
     Accepts an optional Settings override for testing.
     """
     s = settings or get_settings()
+    model = s.ollama_model
+    if agent_name and agent_name in s.agent_model_overrides:
+        model = s.agent_model_overrides[agent_name]
     return ChatOllama(
         base_url=s.ollama_base_url,
-        model=s.ollama_model,
+        model=model,
         temperature=s.ollama_temperature,
     )
 

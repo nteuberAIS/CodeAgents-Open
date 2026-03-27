@@ -10,9 +10,19 @@ Design notes:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any
 
+from jinja2 import Environment, FileSystemLoader
 from langchain_ollama import ChatOllama
+
+# Jinja2 environment for prompt templates — loaded once, shared by all agents
+_PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
+_jinja_env = Environment(
+    loader=FileSystemLoader(str(_PROMPTS_DIR)),
+    keep_trailing_newline=True,
+    undefined=__import__("jinja2").StrictUndefined,
+)
 
 
 class BaseAgent(ABC):
@@ -22,6 +32,11 @@ class BaseAgent(ABC):
     """
 
     name: str = "base"
+
+    # Context curation defaults — override in subclasses to tune
+    MAX_CONTENT_ITEMS: int = 10
+    MAX_CONTENT_CHARS: int = 8000
+    CONTENT_STATUSES: list[str] = ["Ready", "In Progress", "Backlog", "Active"]
 
     def __init__(self, llm: ChatOllama, context: dict | None = None) -> None:
         self.llm = llm
@@ -83,6 +98,93 @@ class BaseAgent(ABC):
     def has_tool(self, name: str) -> bool:
         """Check if a tool is successfully bound."""
         return self.tools.get(name) is not None
+
+    @classmethod
+    def curate_context(
+        cls,
+        raw_context: dict | None,
+        content_dir: Path | None = None,
+    ) -> dict | None:
+        """Filter raw Notion context and attach page content.
+
+        Default implementation:
+        1. Passes through all entity lists unchanged.
+        2. If content_dir is provided, loads page content for entities
+           with has_content=True, filtered by CONTENT_STATUSES.
+        3. Adds a "page_content" key: dict mapping notion_id -> markdown.
+
+        Subclasses can override class attributes (MAX_CONTENT_ITEMS, etc.)
+        to tune behavior, or override this method entirely.
+
+        Args:
+            raw_context: The context dict from _snapshot_to_context().
+            content_dir: Path to data/notion/content/ directory.
+
+        Returns:
+            Curated context dict with "page_content" key, or None.
+        """
+        if not raw_context:
+            return None
+
+        context = dict(raw_context)  # shallow copy
+
+        if not content_dir or not content_dir.exists():
+            context["page_content"] = {}
+            return context
+
+        # Collect entities with content, filtered by status
+        candidates: list[dict] = []
+        for entity_key in ("work_items", "sprints", "docs", "decisions", "risks"):
+            for entity in context.get(entity_key, []):
+                if not entity.get("has_content", False):
+                    continue
+                status = entity.get("status", "")
+                if cls.CONTENT_STATUSES and status not in cls.CONTENT_STATUSES:
+                    continue
+                candidates.append(entity)
+
+        # Sort by status priority (position in CONTENT_STATUSES list)
+        status_order = {s: i for i, s in enumerate(cls.CONTENT_STATUSES)}
+        candidates.sort(key=lambda e: status_order.get(e.get("status", ""), 999))
+
+        # Load content up to limits
+        page_content: dict[str, str] = {}
+        total_chars = 0
+        for entity in candidates[: cls.MAX_CONTENT_ITEMS]:
+            notion_id = entity.get("notion_id", "")
+            path = content_dir / f"{notion_id}.md"
+            if not path.exists():
+                continue
+            content = path.read_text(encoding="utf-8")
+            if total_chars + len(content) > cls.MAX_CONTENT_CHARS:
+                remaining = cls.MAX_CONTENT_CHARS - total_chars
+                if remaining > 200:
+                    content = content[:remaining] + "\n... (truncated)"
+                else:
+                    break
+            page_content[notion_id] = content
+            total_chars += len(content)
+
+        context["page_content"] = page_content
+        return context
+
+    @staticmethod
+    def load_prompt(template_path: str, **kwargs: object) -> str:
+        """Load and render a Jinja2 prompt template.
+
+        Args:
+            template_path: Path relative to prompts/ dir, e.g.
+                           "sprint_planner/system.j2".
+            **kwargs: Template variables passed to Jinja2 render().
+
+        Returns:
+            Rendered prompt string.
+
+        Raises:
+            jinja2.TemplateNotFound: If the template file doesn't exist.
+        """
+        template = _jinja_env.get_template(template_path)
+        return template.render(**kwargs)
 
     @abstractmethod
     def run(self, user_input: str) -> dict:
