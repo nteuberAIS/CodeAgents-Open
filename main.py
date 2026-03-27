@@ -7,6 +7,9 @@ Usage:
     python main.py run "Plan sprint 1.4" --sync      # Sync first, then run
     python main.py run "Plan sprint 1.4" --dry-run   # Show what would happen
     python main.py run "Plan sprint 1.4" --no-tools  # LLM planning only
+    python main.py benchmark                         # Benchmark models
+    python main.py benchmark --models a:7b,b:3b      # Specific models
+    python main.py benchmark --runs 1 --dry-run      # Quick preview
 
 Future:
 - Agent chaining: Planner -> Coder -> Tester -> Updater
@@ -190,6 +193,38 @@ def cmd_eval(args) -> None:
     runner.print_report(results)
 
 
+def cmd_benchmark(args) -> None:
+    """Handle the 'benchmark' subcommand."""
+    from evals.benchmark import DEFAULT_MODELS, BenchmarkRunner
+    from evals.runner import resolve_eval_class
+
+    models = args.models.split(",") if args.models else None
+
+    if args.dry_run:
+        model_list = models or DEFAULT_MODELS
+        eval_cls = resolve_eval_class(args.agent)
+        cases = eval_cls().get_cases()
+        total = len(model_list) * args.runs * len(cases)
+        print(f"[Benchmark] Agent: {args.agent}")
+        print(f"[Benchmark] Models ({len(model_list)}):")
+        for m in model_list:
+            print(f"  - {m}")
+        print(f"[Benchmark] Runs per model: {args.runs}")
+        print(f"[Benchmark] Cases per run: {len(cases)}")
+        print(f"[Benchmark] Total inferences: {total}")
+        return
+
+    runner = BenchmarkRunner(
+        agent_name=args.agent,
+        models=models,
+        num_runs=args.runs,
+    )
+    benchmark = runner.run()
+    runner.save_results(benchmark)
+    print()
+    runner.print_summary(benchmark)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Local AI agent system for sprint automation.",
@@ -263,6 +298,33 @@ def main() -> None:
         help="Show eval cases without running them.",
     )
 
+    # -- benchmark subcommand --
+    bench_parser = subparsers.add_parser(
+        "benchmark",
+        help="Benchmark multiple models against the eval suite.",
+    )
+    bench_parser.add_argument(
+        "--models",
+        default=None,
+        help="Comma-separated list of Ollama model names to benchmark.",
+    )
+    bench_parser.add_argument(
+        "--runs",
+        type=int,
+        default=3,
+        help="Number of runs per model (default: 3).",
+    )
+    bench_parser.add_argument(
+        "--agent",
+        default="sprint_planner",
+        help="Agent to evaluate. Default: sprint_planner",
+    )
+    bench_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show benchmark plan without running.",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -271,6 +333,8 @@ def main() -> None:
         cmd_run(args)
     elif args.command == "eval":
         cmd_eval(args)
+    elif args.command == "benchmark":
+        cmd_benchmark(args)
     else:
         parser.print_help()
         sys.exit(1)
