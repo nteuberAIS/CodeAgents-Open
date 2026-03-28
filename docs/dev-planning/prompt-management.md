@@ -1,8 +1,8 @@
 # Deferred Decision: Prompt Management
 
-> **Status**: Deferred — important, needs dedicated time to design properly.
+> **Status**: Partially resolved — core templating implemented in Phase 2.5, remaining items deferred.
 > **Relevant Phase**: Phase 2+ (all agents depend on prompts)
-> **Last Updated**: 2026-03-25
+> **Last Updated**: 2026-03-27
 
 ---
 
@@ -20,20 +20,18 @@ This decision also covers related concerns:
 
 ## Questions to Resolve
 
-### 1. Prompt Storage & Format
+### 1. Prompt Storage & Format ✓ Resolved
 
-- Markdown files in `prompts/` (current plan) — simple, git-versioned.
-- Should prompts include structured metadata (version, author, last-eval-score)?
-- Do we need a prompt registry beyond the filesystem?
+- Jinja2 `.j2` files in `prompts/{agent_name}/` — git-versioned, no registry needed.
+- No structured metadata for now — git history is sufficient. Eval scores tracked in `evals/`.
+- Resolved in Phase 2.5.
 
-### 2. Prompt Templating
+### 2. Prompt Templating ✓ Resolved
 
-- Current: Simple string with `{context}` placeholder for RAG injection.
-- Future needs:
-  - Multi-section prompts (system, user, few-shot examples)
-  - Conditional sections (include git context only for Coder)
-  - Output schema enforcement (JSON schema in prompt)
-  - Data platform domain terms (Azure SQL, ADF, Medallion, etc.)
+- `BaseAgent.load_prompt()` renders Jinja2 templates with `StrictUndefined`.
+- Multi-section prompts implemented: system (`system.j2`), few-shot examples (`few_shots.j2`).
+- Conditional sections and output schema enforcement handled per-agent.
+- Resolved in Phase 2.5. Domain terms remain open (see Question 6).
 
 ### 3. Prompt Versioning
 
@@ -74,14 +72,19 @@ How do we inject this domain knowledge into prompts without bloating them?
 
 ## Current State
 
-- `agents/sprint_planner.py` has an inline prompt string.
-- No `prompts/` directory exists yet.
-- No templating or versioning in place.
+Phase 2.5 resolved core prompt management:
+
+- Jinja2 templates in `prompts/{agent_name}/` (e.g., `system.j2`, `few_shots.j2`)
+- `BaseAgent.load_prompt(template_path, **kwargs)` renders templates with `StrictUndefined`
+- Multi-section prompts: system instructions, context injection, few-shot examples
+- SprintPlannerAgent returns structured dict (`sprint`, `goal`, `tasks`)
+- Eval harness validates prompt quality (`evals/sprint_planner_eval.py`)
 
 ## Next Steps
 
-- [ ] Design prompt file format (frontmatter + body)
-- [ ] Define output schemas for each agent
-- [ ] Create PR/commit message templates
-- [ ] Decide on eval-driven prompt iteration workflow
-- [ ] Build domain primer for data platform terminology
+- [x] Design prompt file format → Jinja2 `.j2` files in `prompts/`, loaded via `BaseAgent.load_prompt()`
+- [x] Define output schemas for each agent → SprintPlannerAgent returns structured dict
+- [ ] Create PR/commit message templates (Phase 3 — CoderAgent/UpdaterAgent)
+- [ ] Cross-agent output schemas / cascade contract (Phase 3)
+- [ ] Prompt versioning / A/B testing (Phase 6)
+- [ ] Domain primer for data platform terminology (Phase 4 / RAG)

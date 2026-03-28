@@ -508,18 +508,21 @@ Mandatory approval before:
 
 ## 12. Phased Delivery
 
-| Phase | Focus                    | Status      |
-|-------|--------------------------|-------------|
-| 1     | Foundation               | Complete    |
-| 2a    | Notion Read-Only Sync    | Complete    |
-| 2b    | Git Tool                 | Not started |
-| 2c    | Notion Write Tool        | Not started |
-| 2d    | Wire Tools into Agents   | Not started |
-| 2.5   | Agent Quality Pass       | Not started |
-| 3     | Multi-Agent Cascade      | Not started |
-| 4     | RAG & Context            | Not started |
-| 5     | Code Tools (Aider/Cont.) | Not started |
-| 6     | Production Hardening     | Not started |
+| Phase | Focus                              | Status      |
+|-------|------------------------------------|-------------|
+| 1     | Foundation                         | Complete    |
+| 2a    | Notion Read-Only Sync              | Complete    |
+| 2b    | Git Tool                           | Complete    |
+| 2c    | Notion Write Tool                  | Complete    |
+| 2d    | Wire Tools into Agents             | Complete    |
+| 2e    | Page Content Sync                  | Complete    |
+| 2.5   | Agent Quality Pass                 | Complete    |
+| 2.6a  | Doc Cleanup & Dependency Updates   | Complete    |
+| 2.6b  | Model Benchmarking                 | Complete    |
+| 3     | Multi-Agent Cascade (sub-phased, includes Aider) | Not started |
+| 4     | RAG & Context                      | Not started |
+| 5     | IDE & Review Tools                 | Not started |
+| 6     | Production Hardening               | Not started |
 
 See [roadmap.md](roadmap.md) for detailed phase breakdowns.
 
@@ -544,11 +547,14 @@ These topics need further thought and are tracked in `dev-planning/`:
 | 2  | Delta sync from Notion — polling interval?                               | 4     | Medium   | Open     |
 | 3  | Prompt versioning beyond git — eval harness?                             | 2     | Medium   | Deferred |
 | 4  | Which Notion databases are in scope (IDs, schemas)?                      | 2     | High     | Resolved |
-| 5  | Git tool must support both Azure DevOps (az repos) and GitHub (gh CLI) — abstraction layer needed? | 2b | High | Open |
+| 5  | Git tool must support both Azure DevOps (az repos) and GitHub (gh CLI) — abstraction layer needed? | 2b | High | Resolved |
 
 **#4 Resolved** — 5 databases synced in Phase 2a: Work Items, Phases & Sprints,
 Docs & Specs, Decisions (ADRs), Risks & Issues. DB IDs configured in
 `config/settings.py`, schemas in `schemas/notion_models.py`.
+
+**#5 Resolved** — BaseGitTool ABC with GitHubTool and AzDevOpsTool providers.
+Implemented in Phase 2b.
 
 Items resolved from prior version:
 - ~~State persistence~~ → Checkpoints per work item, expanding to per-node.
