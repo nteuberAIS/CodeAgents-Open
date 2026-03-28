@@ -1,6 +1,6 @@
 # Roadmap
 
-## Phase 1: Foundation (current)
+## Phase 1: Foundation ✓
 - [x] Project structure with modular folders
 - [x] Ollama integration via LangChain
 - [x] Config layer with env-var overrides and registries
@@ -58,7 +58,23 @@
 - [x] Per-agent model overrides via `agent_model_overrides` dict in Settings
 - [x] Model benchmarking infrastructure ready (eval framework + per-agent overrides; multi-model comparison deferred)
 
+## Phase 2.6a: Doc Cleanup & Dependency Updates ✓
+- [x] Updated all docs to reflect Phases 1–2.6b completion
+- [x] Moved Aider CLI integration from Phase 5 into Phase 3
+- [x] Designed minimum viable error handling spec (failure-modes.md)
+- [x] Added `langgraph` dependency, bumped `jinja2` pin
+- [x] Resolved Open Question #5 (git tool abstraction)
+
+## Phase 2.6b: Model Benchmarking ✓
+- [x] Benchmarking framework in `evals/benchmarks/` with GPU monitoring
+- [x] 7 models tested on RTX 2000 Ada 8GB (3 runs each)
+- [x] Top performers: qwen2.5-coder:3b (1.000 avg, 115 tok/s) and qwen2.5-coder:7b (1.000 avg, 52.7 tok/s)
+- [x] Results in `evals/benchmarks/RESULTS.md`
+
 ## Phase 3: Multi-Agent Cascade
+> Sub-phased (3a, 3b, etc.) — breakdown TBD.
+
+- [ ] Aider CLI integration (CoderAgent wraps Aider for code generation)
 - [ ] CoderAgent — generates code changes from sprint tasks
 - [ ] TesterAgent — runs tests, reports results
 - [ ] UpdaterAgent — pushes to Notion, creates PRs
@@ -70,8 +86,7 @@
 - [ ] RAG retriever injected into agent prompts
 - [ ] Context-aware sprint planning from historical data
 
-## Phase 5: Code Tools
-- [ ] Aider CLI integration for AI-assisted edits
+## Phase 5: IDE & Review Tools
 - [ ] Continue.dev integration for IDE-level changes
 - [ ] Automated code review via TesterAgent
 
