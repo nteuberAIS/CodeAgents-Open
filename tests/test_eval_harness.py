@@ -59,10 +59,20 @@ VALID_PLAN = {
 }
 
 
+def _wrap_envelope(plan_dict):
+    """Wrap a plan dict in the standard agent result envelope."""
+    return {
+        "success": True,
+        "error_type": None,
+        "error_message": None,
+        "partial_output": plan_dict,
+    }
+
+
 def _make_mock_agent(plan_dict):
-    """Create a mock agent that returns a fixed plan."""
+    """Create a mock agent that returns a fixed plan in envelope format."""
     agent = MagicMock()
-    agent.run.return_value = plan_dict
+    agent.run.return_value = _wrap_envelope(plan_dict)
     return agent
 
 
@@ -97,7 +107,7 @@ class TestEvalModels:
     def test_eval_result_model(self):
         result = EvalResult(
             case_name="test",
-            agent_output={"sprint": 1},
+            agent_output=_wrap_envelope({"sprint": 1}),
             scores=[EvalScore(name="s1", passed=True, score=1.0)],
             overall_pass=True,
             overall_score=1.0,
@@ -128,13 +138,18 @@ class TestSprintPlannerEvalScoring:
 
     def test_score_valid_output_all_pass(self):
         case = EvalCase(name="test", description="test", prompt="Plan sprint 8")
-        scores = self.suite.score(case, VALID_PLAN)
+        scores = self.suite.score(case, _wrap_envelope(VALID_PLAN))
         assert all(s.passed for s in scores), [
             (s.name, s.detail) for s in scores if not s.passed
         ]
 
     def test_score_parse_error_fails_json_valid(self):
-        output = {"raw_output": "garbage", "parse_error": "not JSON"}
+        output = {
+            "success": False,
+            "error_type": "llm",
+            "error_message": "not JSON",
+            "partial_output": {"raw_output": "garbage"},
+        }
         case = EvalCase(name="test", description="test", prompt="Plan sprint 8")
         scores = self.suite.score(case, output)
         json_score = next(s for s in scores if s.name == "json_valid")
@@ -142,7 +157,7 @@ class TestSprintPlannerEvalScoring:
         assert json_score.score == 0.0
 
     def test_score_missing_tasks_fails_schema(self):
-        output = {"sprint": 8, "goal": "test"}  # missing tasks, dependencies
+        output = _wrap_envelope({"sprint": 8, "goal": "test"})  # missing tasks, dependencies
         case = EvalCase(name="test", description="test", prompt="Plan")
         scores = self.suite.score(case, output)
         schema_score = next(s for s in scores if s.name == "schema_compliance")
@@ -155,7 +170,7 @@ class TestSprintPlannerEvalScoring:
             {"from": "FAKE-001", "to": "FAKE-002", "type": "blocks"}
         ]
         case = EvalCase(name="test", description="test", prompt="Plan")
-        scores = self.suite.score(case, bad_plan)
+        scores = self.suite.score(case, _wrap_envelope(bad_plan))
         dep_score = next(s for s in scores if s.name == "dependency_validity")
         assert not dep_score.passed
         assert dep_score.score == 0.0
@@ -167,7 +182,7 @@ class TestSprintPlannerEvalScoring:
             {**VALID_PLAN["tasks"][1], "id": "task-2"},
         ]
         case = EvalCase(name="test", description="test", prompt="Plan")
-        scores = self.suite.score(case, bad_plan)
+        scores = self.suite.score(case, _wrap_envelope(bad_plan))
         id_score = next(s for s in scores if s.name == "id_convention")
         assert not id_score.passed
 
@@ -187,7 +202,7 @@ class TestSprintPlannerEvalScoring:
                 "page_content": {},
             },
         )
-        scores = self.suite.score(case, VALID_PLAN)
+        scores = self.suite.score(case, _wrap_envelope(VALID_PLAN))
         ctx_score = next(s for s in scores if s.name == "context_usage")
         assert ctx_score.passed
         assert ctx_score.score > 0.0
@@ -225,7 +240,8 @@ class TestEvalRunner:
         # Should not raise — errors captured in output
         assert len(results) == len(suite.get_cases())
         for result in results:
-            assert "parse_error" in result.agent_output
+            assert result.agent_output["success"] is False
+            assert result.agent_output["error_type"] == "infra"
 
     def test_print_report_runs_without_error(self, capsys):
         suite = SprintPlannerEval()
@@ -234,7 +250,7 @@ class TestEvalRunner:
         results = [
             EvalResult(
                 case_name="test",
-                agent_output=VALID_PLAN,
+                agent_output=_wrap_envelope(VALID_PLAN),
                 scores=[EvalScore(name="s1", passed=True, score=1.0, detail="ok")],
                 overall_pass=True,
                 overall_score=1.0,

@@ -22,6 +22,7 @@ class SprintPlannerAgent(BaseAgent):
     """Generates a structured sprint plan from a natural language prompt."""
 
     name = "sprint_planner"
+    MAX_ITERATIONS = 2  # Near-one-shot: retry once on JSON parse failure
 
     # Tools this agent can use
     REQUIRED_TOOLS: list[str] = []  # None required — agent works without tools
@@ -39,19 +40,8 @@ class SprintPlannerAgent(BaseAgent):
             user_input: e.g. "Plan sprint 8"
 
         Returns:
-            Parsed JSON sprint plan with optional "execution" key if tools
-            are bound. Example:
-            {
-                "sprint": 8,
-                "goal": "...",
-                "tasks": [...],
-                "dependencies": [...],
-                "execution": {
-                    "notion_items_created": [...],
-                    "branches_created": [...],
-                    "errors": [...]
-                }
-            }
+            Standard envelope with partial_output containing the plan keys
+            (sprint, goal, tasks, dependencies) and optional "execution".
         """
         # Phase 1: Generate plan via LLM
         system_content = self.load_prompt("sprint_planner/system.j2")
@@ -67,11 +57,20 @@ class SprintPlannerAgent(BaseAgent):
         raw = response.content
         plan = self._parse_response(raw)
 
-        # Phase 2: Execute plan if tools are available and plan parsed OK
-        if "parse_error" not in plan and self.tools:
+        # Parse failure — wrap as LLM error
+        if "parse_error" in plan:
+            return self.wrap_result(
+                success=False,
+                error_type="llm",
+                error_message=plan["parse_error"],
+                partial_output={"raw_output": plan["raw_output"]},
+            )
+
+        # Phase 2: Execute plan if tools are available
+        if self.tools:
             plan["execution"] = self._execute_plan(plan)
 
-        return plan
+        return self.wrap_result(success=True, partial_output=plan)
 
     def _execute_plan(self, plan: dict) -> dict:
         """Execute a sprint plan by creating Notion items and git branches.

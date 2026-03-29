@@ -124,17 +124,18 @@ class SprintPlannerEval(BaseEval):
     # -- Scoring criteria --
 
     def _score_json_valid(self, output: dict) -> EvalScore:
-        passed = "parse_error" not in output
+        passed = output.get("success", False)
         return EvalScore(
             name="json_valid",
             passed=passed,
             score=1.0 if passed else 0.0,
-            detail="" if passed else output.get("parse_error", "unknown"),
+            detail="" if passed else output.get("error_message", "unknown"),
         )
 
     def _score_schema_compliance(self, output: dict) -> EvalScore:
+        po = output.get("partial_output", {})
         required = {"sprint", "goal", "tasks", "dependencies"}
-        present = required.intersection(output.keys())
+        present = required.intersection(po.keys())
         score = len(present) / len(required) if required else 1.0
         missing = required - present
         return EvalScore(
@@ -145,7 +146,8 @@ class SprintPlannerEval(BaseEval):
         )
 
     def _score_task_count(self, output: dict) -> EvalScore:
-        tasks = output.get("tasks", [])
+        po = output.get("partial_output", {})
+        tasks = po.get("tasks", [])
         count = len(tasks)
         passed = 2 <= count <= 8
         return EvalScore(
@@ -156,7 +158,8 @@ class SprintPlannerEval(BaseEval):
         )
 
     def _score_task_completeness(self, output: dict) -> EvalScore:
-        tasks = output.get("tasks", [])
+        po = output.get("partial_output", {})
+        tasks = po.get("tasks", [])
         if not tasks:
             return EvalScore(
                 name="task_completeness",
@@ -178,8 +181,9 @@ class SprintPlannerEval(BaseEval):
         )
 
     def _score_dependency_validity(self, output: dict) -> EvalScore:
-        task_ids = {t.get("id") for t in output.get("tasks", [])}
-        deps = output.get("dependencies", [])
+        po = output.get("partial_output", {})
+        task_ids = {t.get("id") for t in po.get("tasks", [])}
+        deps = po.get("dependencies", [])
         if not deps:
             return EvalScore(
                 name="dependency_validity",
@@ -201,7 +205,8 @@ class SprintPlannerEval(BaseEval):
         )
 
     def _score_id_convention(self, output: dict) -> EvalScore:
-        tasks = output.get("tasks", [])
+        po = output.get("partial_output", {})
+        tasks = po.get("tasks", [])
         if not tasks:
             return EvalScore(
                 name="id_convention",
@@ -224,7 +229,8 @@ class SprintPlannerEval(BaseEval):
         for wi in (case.context or {}).get("work_items", []):
             context_names.add(wi.get("name", "").lower())
 
-        output_text = json.dumps(output).lower()
+        po = output.get("partial_output", {})
+        output_text = json.dumps(po).lower()
         matches = sum(1 for name in context_names if name in output_text)
         target = max(1, len(context_names) * 0.3)
         score = min(1.0, matches / target)

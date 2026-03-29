@@ -16,6 +16,8 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader
 from langchain_ollama import ChatOllama
 
+from schemas.agent_models import AgentResult
+
 # Jinja2 environment for prompt templates — loaded once, shared by all agents
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 _jinja_env = Environment(
@@ -33,6 +35,9 @@ class BaseAgent(ABC):
 
     name: str = "base"
 
+    # Iteration cap — override in subclasses (used by reflection loop / orchestrator)
+    MAX_ITERATIONS: int = 1
+
     # Context curation defaults — override in subclasses to tune
     MAX_CONTENT_ITEMS: int = 10
     MAX_CONTENT_CHARS: int = 8000
@@ -42,8 +47,7 @@ class BaseAgent(ABC):
         self.llm = llm
         self.context = context
         self.tools: dict[str, Any] = {}
-        # Future: self.memory = None       — conversation / retrieval memory
-        # Future: self.max_iterations = 5  — reflection loop cap (kill rabbit holes)
+        # Future: self.memory = None  — conversation / retrieval memory
 
     def bind_tools(
         self,
@@ -186,15 +190,55 @@ class BaseAgent(ABC):
         template = _jinja_env.get_template(template_path)
         return template.render(**kwargs)
 
+    def wrap_result(
+        self,
+        success: bool,
+        partial_output: dict,
+        error_type: str | None = None,
+        error_message: str | None = None,
+    ) -> dict:
+        """Construct a standardized result envelope.
+
+        Validates via AgentResult Pydantic model, then returns a plain dict
+        for compatibility with LangGraph and JSON serialization.
+
+        Args:
+            success: True if the agent completed its primary task.
+            partial_output: Agent-specific data (full on success, partial on failure).
+            error_type: One of "llm", "tool", "logic", "timeout", "infra", or None.
+            error_message: Human-readable error description, or None.
+
+        Returns:
+            Dict with keys: success, error_type, error_message, partial_output.
+        """
+        return AgentResult(
+            success=success,
+            error_type=error_type,
+            error_message=error_message,
+            partial_output=partial_output,
+        ).model_dump()
+
     @abstractmethod
     def run(self, user_input: str) -> dict:
         """Execute the agent's task and return structured output.
+
+        All implementations must return the standard envelope via
+        ``self.wrap_result()``:
+
+        .. code-block:: python
+
+            {
+                "success": bool,
+                "error_type": str | None,   # "llm", "tool", "logic", "timeout", "infra"
+                "error_message": str | None,
+                "partial_output": dict,      # agent-specific data
+            }
 
         Args:
             user_input: The user's prompt / instruction.
 
         Returns:
-            A dict with the agent's result. Schema varies by agent.
+            Standardized result envelope (see above).
         """
         ...
 
@@ -208,7 +252,7 @@ class BaseAgent(ABC):
     #     pass
     #
     # def reflect(self, result: dict) -> dict:
-    #     """Self-critique loop: re-evaluate output, fix issues, cap iterations.
-    #     Prevents rabbit holes by enforcing max_iterations.
+    #     """Self-critique loop: re-evaluate output, fix issues.
+    #     Enforces MAX_ITERATIONS to prevent rabbit holes.
     #     """
     #     pass

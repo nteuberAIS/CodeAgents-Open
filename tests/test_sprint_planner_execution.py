@@ -208,15 +208,18 @@ class TestRunWithTools:
 
         result = agent.run("Plan sprint 8")
 
-        assert "execution" in result
-        assert len(result["execution"]["notion_items_created"]) == 2
+        assert result["success"] is True
+        po = result["partial_output"]
+        assert "execution" in po
+        assert len(po["execution"]["notion_items_created"]) == 2
 
     def test_run_omits_execution_when_no_tools(self):
         agent = _make_agent_with_plan()  # No tools
 
         result = agent.run("Plan sprint 8")
 
-        assert "execution" not in result
+        assert result["success"] is True
+        assert "execution" not in result["partial_output"]
 
     def test_run_omits_execution_on_parse_error(self):
         llm = _make_llm("not valid json at all")
@@ -225,8 +228,9 @@ class TestRunWithTools:
 
         result = agent.run("Plan sprint 8")
 
-        assert "parse_error" in result
-        assert "execution" not in result
+        assert result["success"] is False
+        assert result["error_type"] == "llm"
+        assert "execution" not in result["partial_output"]
 
     def test_run_returns_plan_even_with_execution_errors(self):
         notion_write = MagicMock()
@@ -235,9 +239,11 @@ class TestRunWithTools:
 
         result = agent.run("Plan sprint 8")
 
-        assert result["sprint"] == 8
-        assert "execution" in result
-        assert len(result["execution"]["errors"]) > 0
+        assert result["success"] is True
+        po = result["partial_output"]
+        assert po["sprint"] == 8
+        assert "execution" in po
+        assert len(po["execution"]["errors"]) > 0
 
 
 class TestRunWithoutTools:
@@ -249,10 +255,12 @@ class TestRunWithoutTools:
 
         result = agent.run("Plan sprint 8")
 
-        assert result["sprint"] == 8
-        assert result["goal"] == "Complete Phase 2d"
-        assert len(result["tasks"]) == 2
-        assert "execution" not in result
+        assert result["success"] is True
+        po = result["partial_output"]
+        assert po["sprint"] == 8
+        assert po["goal"] == "Complete Phase 2d"
+        assert len(po["tasks"]) == 2
+        assert "execution" not in po
 
     def test_tool_declarations_exist(self):
         """Verify agent declares its tool requirements."""

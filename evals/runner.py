@@ -53,7 +53,12 @@ class EvalRunner:
                 agent = agent_factory(case.context)
                 output = agent.run(case.prompt)
             except Exception as e:
-                output = {"parse_error": str(e), "raw_output": ""}
+                output = {
+                    "success": False,
+                    "error_type": "infra",
+                    "error_message": str(e),
+                    "partial_output": {},
+                }
             elapsed = time.monotonic() - t0
 
             scores = self.eval_suite.score(case, output)

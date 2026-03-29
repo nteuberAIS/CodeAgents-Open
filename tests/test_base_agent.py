@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agents.base import BaseAgent
+from schemas.agent_models import AgentResult
 
 
 # -- Concrete subclass for testing (BaseAgent is abstract) --
@@ -18,7 +19,17 @@ class _StubAgent(BaseAgent):
     name = "stub"
 
     def run(self, user_input: str) -> dict:
-        return {"echo": user_input}
+        return self.wrap_result(success=True, partial_output={"echo": user_input})
+
+
+class _CustomIterAgent(BaseAgent):
+    """Agent with custom MAX_ITERATIONS for testing."""
+
+    name = "custom_iter"
+    MAX_ITERATIONS = 5
+
+    def run(self, user_input: str) -> dict:
+        return self.wrap_result(success=True, partial_output={})
 
 
 # -- Helpers --
@@ -205,3 +216,78 @@ class TestToolsInitialization:
     def test_tools_empty_by_default(self):
         agent = _StubAgent(llm=MagicMock())
         assert agent.tools == {}
+
+
+class TestMaxIterations:
+    """Tests for MAX_ITERATIONS class attribute."""
+
+    def test_default_is_one(self):
+        assert BaseAgent.MAX_ITERATIONS == 1
+        agent = _StubAgent(llm=MagicMock())
+        assert agent.MAX_ITERATIONS == 1
+
+    def test_subclass_override(self):
+        agent = _CustomIterAgent(llm=MagicMock())
+        assert agent.MAX_ITERATIONS == 5
+
+
+class TestWrapResult:
+    """Tests for BaseAgent.wrap_result()."""
+
+    def setup_method(self):
+        self.agent = _StubAgent(llm=MagicMock())
+
+    def test_success_envelope(self):
+        result = self.agent.wrap_result(
+            success=True,
+            partial_output={"sprint": 8, "tasks": []},
+        )
+        assert result["success"] is True
+        assert result["error_type"] is None
+        assert result["error_message"] is None
+        assert result["partial_output"] == {"sprint": 8, "tasks": []}
+
+    def test_error_envelope(self):
+        result = self.agent.wrap_result(
+            success=False,
+            error_type="llm",
+            error_message="JSON parse failed",
+            partial_output={"raw_output": "garbage"},
+        )
+        assert result["success"] is False
+        assert result["error_type"] == "llm"
+        assert result["error_message"] == "JSON parse failed"
+        assert result["partial_output"] == {"raw_output": "garbage"}
+
+    def test_all_error_types(self):
+        for etype in ("llm", "tool", "logic", "timeout", "infra"):
+            result = self.agent.wrap_result(
+                success=False, error_type=etype,
+                error_message="test", partial_output={},
+            )
+            assert result["error_type"] == etype
+
+    def test_success_with_error_type_raises(self):
+        with pytest.raises(ValueError, match="error_type must be None"):
+            self.agent.wrap_result(
+                success=True, error_type="llm", partial_output={},
+            )
+
+    def test_success_with_error_message_raises(self):
+        with pytest.raises(ValueError, match="error_message must be None"):
+            self.agent.wrap_result(
+                success=True, error_message="oops", partial_output={},
+            )
+
+    def test_failure_without_error_type_raises(self):
+        with pytest.raises(ValueError, match="error_type is required"):
+            self.agent.wrap_result(success=False, partial_output={})
+
+    def test_returns_plain_dict(self):
+        result = self.agent.wrap_result(success=True, partial_output={})
+        assert isinstance(result, dict)
+        assert not isinstance(result, AgentResult)
+
+    def test_empty_partial_output_default(self):
+        result = self.agent.wrap_result(success=True, partial_output={})
+        assert result["partial_output"] == {}
