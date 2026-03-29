@@ -263,27 +263,33 @@ class TestRun:
     def test_returns_parsed_json(self):
         agent = SprintPlannerAgent(llm=_make_llm(VALID_PLAN_JSON))
         result = agent.run("Plan sprint 8")
-        assert result["sprint"] == 8
-        assert result["goal"] == "Deploy SHIR and establish medallion bronze layer"
-        assert len(result["tasks"]) == 2
+        assert result["success"] is True
+        assert result["error_type"] is None
+        assert result["partial_output"]["sprint"] == 8
+        assert result["partial_output"]["goal"] == "Deploy SHIR and establish medallion bronze layer"
+        assert len(result["partial_output"]["tasks"]) == 2
 
     def test_returns_parse_error_on_garbage(self):
         agent = SprintPlannerAgent(llm=_make_llm("Sure! Here is your plan..."))
         result = agent.run("Plan sprint 8")
-        assert "raw_output" in result
-        assert "parse_error" in result
+        assert result["success"] is False
+        assert result["error_type"] == "llm"
+        assert result["error_message"] == "LLM did not return valid JSON"
+        assert "raw_output" in result["partial_output"]
 
     def test_full_happy_path(self):
         agent = SprintPlannerAgent(llm=_make_llm(VALID_PLAN_JSON))
         result = agent.run("Plan sprint 8")
-        assert result["sprint"] == 8
-        assert result["goal"] == "Deploy SHIR and establish medallion bronze layer"
-        assert len(result["tasks"]) == 2
-        assert result["tasks"][0]["id"] == "SP8-001"
-        assert result["tasks"][1]["id"] == "SP8-002"
-        assert len(result["dependencies"]) == 1
-        assert result["dependencies"][0]["from"] == "SP8-002"
-        assert result["dependencies"][0]["to"] == "SP8-001"
+        assert result["success"] is True
+        po = result["partial_output"]
+        assert po["sprint"] == 8
+        assert po["goal"] == "Deploy SHIR and establish medallion bronze layer"
+        assert len(po["tasks"]) == 2
+        assert po["tasks"][0]["id"] == "SP8-001"
+        assert po["tasks"][1]["id"] == "SP8-002"
+        assert len(po["dependencies"]) == 1
+        assert po["dependencies"][0]["from"] == "SP8-002"
+        assert po["dependencies"][0]["to"] == "SP8-001"
 
 
 class TestPromptExternalization:
@@ -386,6 +392,8 @@ class TestRunIntegration:
         assert "VRAM limit" in system_msg
 
         # Verify parsed result
-        assert result["sprint"] == 8
-        assert len(result["tasks"]) == 2
-        assert len(result["dependencies"]) == 1
+        assert result["success"] is True
+        po = result["partial_output"]
+        assert po["sprint"] == 8
+        assert len(po["tasks"]) == 2
+        assert len(po["dependencies"]) == 1
