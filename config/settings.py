@@ -38,6 +38,7 @@ class Settings(BaseSettings):
         "notion_write": "tools.notion_write_tool.NotionWriteTool",
         "github": "tools.github_tool.GitHubTool",
         "azdevops": "tools.azdevops_tool.AzDevOpsTool",
+        "aider": "tools.aider_tool.AiderTool",
     }
 
     # -- Notion (Phase 2a: read-only sync) --
@@ -59,9 +60,14 @@ class Settings(BaseSettings):
     azure_devops_project: str | None = None
     azure_devops_repo: str | None = None
 
+    # -- Aider CLI (Phase 3c) --
+    aider_binary: str = "aider"                     # Path to Aider CLI binary
+    aider_model: str | None = None                  # Full provider-prefixed model (e.g. "ollama/qwen2.5-coder:7b"); auto-derived from ollama_model if None
+    aider_timeout: int = 120                        # Subprocess timeout in seconds
+    aider_repo_dir: str | None = None               # Path to target repo for Aider edits
+
     # -- Future config hooks (uncomment as needed) --
     # rag_retriever_path: str | None = None        # Path to local Notion mirror / vector DB
-    # aider_binary: str = "aider"                   # Path to Aider CLI
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
