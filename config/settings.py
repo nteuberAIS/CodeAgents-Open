@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     # Future agents: "coder": "agents.coder.CoderAgent", etc.
     agent_registry: dict[str, str] = {
         "sprint_planner": "agents.sprint_planner.SprintPlannerAgent",
+        "coder": "agents.coder.CoderAgent",
     }
 
     # -- Tool registry --
