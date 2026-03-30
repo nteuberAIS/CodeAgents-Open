@@ -11,17 +11,24 @@ operation with a clear upgrade path to multi-agent workflows.
 CodeAgents-Open/
 ├── agents/
 │   ├── base.py             # BaseAgent ABC (tool binding, LLM injection)
-│   └── sprint_planner.py   # Sprint planning agent (plan + execute)
+│   ├── sprint_planner.py   # Sprint planning agent (plan + execute)
+│   ├── coder.py            # CoderAgent — wraps Aider CLI for code generation
+│   ├── tester.py           # TesterAgent — runs pytest, reports pass/fail
+│   └── updater.py          # UpdaterAgent — creates PRs, updates Notion status
 ├── tools/
 │   ├── notion_tool.py      # Notion read-only sync (properties + page content)
 │   ├── notion_write_tool.py # Local write-back (pending changes pattern)
 │   ├── notion_renderer.py  # Block-to-markdown converter (30+ block types)
 │   ├── git_tool.py         # BaseGitTool ABC (shared CLI execution)
 │   ├── github_tool.py      # GitHub provider (gh CLI)
-│   └── azdevops_tool.py    # Azure DevOps provider (az repos CLI)
+│   ├── azdevops_tool.py    # Azure DevOps provider (az repos CLI)
+│   └── aider_tool.py       # Aider CLI wrapper for AI-assisted code edits
 ├── schemas/
 │   ├── notion_models.py    # Notion entity models (5 entities + sync metadata)
-│   └── git_models.py       # Git models (Branch, PullRequest, CommitInfo)
+│   ├── git_models.py       # Git models (Branch, PullRequest, CommitInfo)
+│   ├── agent_models.py     # AgentResult structured output schema
+│   ├── aider_models.py     # Aider invocation/result models
+│   └── sprint_state.py     # SprintState TypedDict for LangGraph cascade
 ├── config/
 │   └── settings.py         # Pydantic settings, LLM factory, registries
 ├── data/
@@ -58,7 +65,6 @@ Same pattern as agents. Tools are loadable classes that agents bind via
 - `notion_write` — Local write-back with pending changes pattern
 - `github` — GitHub CLI (`gh`) for branches, PRs, commits
 - `azdevops` — Azure DevOps CLI (`az repos`) for branches, PRs, commits
-
 - `aider` — Aider CLI for AI-assisted code edits
 
 Planned:
