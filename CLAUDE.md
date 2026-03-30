@@ -38,18 +38,26 @@ python main.py run "Plan sprint 8"     # Run agent with prompt (auto-binds tools
 python main.py run "..." --sync        # Sync first, then run
 python main.py run "..." --no-tools    # LLM planning only, no tool execution
 python main.py run "..." --dry-run     # Show what would happen
+python main.py cascade "Deploy SHIR"          # Run full cascade (Planner→Coder→Tester→Updater)
+python main.py cascade "..." --dry-run        # Show what would happen
+python main.py cascade "..." --max-tasks 2    # Limit tasks processed
+python main.py cascade "..." --sprint-id s-8  # Explicit sprint ID
+python main.py cascade --list                 # List past cascade runs
+python main.py cascade --show sprint-8        # Show saved state for a run
 python main.py eval                           # Run all evals (requires Ollama)
 python main.py eval --agent sprint_planner    # Run specific agent evals
 python main.py eval --model mistral:7b        # Override model for benchmarking
-pytest tests/                                 # Run all tests (340 tests)
+pytest tests/                                 # Run all tests
 ```
+
+## Project Structure (cont.)
+- `orchestration/` — LangGraph cascade: graph definition, runner, state management
+- `data/cascade/` — Saved cascade run states (JSON)
 
 ## Current State
 - Phase 1 (Foundation): Complete
-- Phase 2a (Notion Read-Only Sync): Complete
-- Phase 2b (Git Tool): Complete
-- Phase 2c (Notion Local Write-Back): Complete
-- Phase 2d (Wire Tools into Agents): Complete
-- Phase 2e (Page Content Sync): Complete
+- Phase 2a–2e (Notion Sync, Git, Write-Back, Wiring, Content): Complete
 - Phase 2.5 (Agent Quality Pass): Complete
-- Next: Phase 3 (Multi-Agent Cascade) — see docs/roadmap.md
+- Phase 2.6a–2.6b (Doc Cleanup, Benchmarking): Complete
+- Phase 3 (Multi-Agent Cascade): Complete
+- Next: Phase 4 (RAG & Context) — see docs/roadmap.md

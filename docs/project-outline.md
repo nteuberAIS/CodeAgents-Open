@@ -519,7 +519,13 @@ Mandatory approval before:
 | 2.5   | Agent Quality Pass                 | Complete    |
 | 2.6a  | Doc Cleanup & Dependency Updates   | Complete    |
 | 2.6b  | Model Benchmarking                 | Complete    |
-| 3     | Multi-Agent Cascade (sub-phased, includes Aider) | Not started |
+| 3a    | Structured Error Return              | Complete    |
+| 3b    | SprintState Schema                   | Complete    |
+| 3c    | Aider Tool                           | Complete    |
+| 3d    | CoderAgent                           | Complete    |
+| 3e    | TesterAgent + UpdaterAgent           | Complete    |
+| 3f    | LangGraph Cascade                    | Complete    |
+| 3g    | CLI Integration + Docs               | Complete    |
 | 4     | RAG & Context                      | Not started |
 | 5     | IDE & Review Tools                 | Not started |
 | 6     | Production Hardening               | Not started |

@@ -1,12 +1,15 @@
-"""Tests for main.py — CLI tool binding and context loading."""
+"""Tests for main.py — CLI tool binding, context loading, and cascade CLI."""
 
 from __future__ import annotations
 
+import json
+from argparse import Namespace
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from main import _get_agent_tools, _load_notion_context, _snapshot_to_context
+from main import _get_agent_tools, _load_notion_context, _snapshot_to_context, cmd_cascade
 
 
 # -- Helpers --
@@ -256,3 +259,253 @@ class TestGetLlmModelOverrides:
         llm = get_llm(settings, agent_name="sprint_planner")
 
         assert llm.model == "llama3:8b"
+
+
+# -- Tests for cmd_cascade --
+
+
+def _cascade_args(**overrides) -> Namespace:
+    """Create a Namespace mimicking parsed cascade CLI args."""
+    defaults = {
+        "prompt": "Deploy SHIR and bronze layer",
+        "sprint_id": None,
+        "dry_run": False,
+        "max_tasks": None,
+        "abort_threshold": 0.5,
+        "sync": False,
+        "model": None,
+        "list": False,
+        "show": None,
+    }
+    defaults.update(overrides)
+    return Namespace(**defaults)
+
+
+class TestCmdCascade:
+    """Tests for cmd_cascade()."""
+
+    @patch("orchestration.CascadeRunner")
+    @patch("main.get_settings")
+    def test_happy_path(self, mock_get_settings, mock_runner_cls, tmp_path):
+        """CascadeRunner is called and state is saved."""
+        settings = _make_settings()
+        settings.data_dir = str(tmp_path)
+        mock_get_settings.return_value = settings
+
+        final_state = {
+            "sprint_id": "sprint-8",
+            "status": "completed",
+            "tasks": [{"id": "T1"}],
+            "task_results": {},
+            "errors": [],
+            "failed_task_ids": [],
+            "plan": {},
+            "current_task_index": 1,
+            "iteration_counts": {},
+            "abort_threshold": 0.5,
+            "max_tasks": 0,
+        }
+        runner = MagicMock()
+        runner.run.return_value = final_state
+        mock_runner_cls.return_value = runner
+
+        args = _cascade_args(sprint_id="sprint-8")
+        cmd_cascade(args)
+
+        runner.run.assert_called_once_with(
+            sprint_id="sprint-8",
+            goal="Deploy SHIR and bronze layer",
+            abort_threshold=0.5,
+            max_tasks=0,
+        )
+        state_path = tmp_path / "cascade" / "sprint-8.json"
+        assert state_path.exists()
+        saved = json.loads(state_path.read_text())
+        assert saved["status"] == "completed"
+
+    @patch("orchestration.CascadeRunner")
+    @patch("main.get_settings")
+    def test_max_tasks_passed(self, mock_get_settings, mock_runner_cls, tmp_path):
+        """--max-tasks is forwarded to runner."""
+        settings = _make_settings()
+        settings.data_dir = str(tmp_path)
+        mock_get_settings.return_value = settings
+
+        runner = MagicMock()
+        runner.run.return_value = {"sprint_id": "s1", "status": "completed",
+                                    "tasks": [], "task_results": {},
+                                    "errors": [], "failed_task_ids": [],
+                                    "plan": {}, "current_task_index": 0,
+                                    "iteration_counts": {},
+                                    "abort_threshold": 0.5, "max_tasks": 2}
+        mock_runner_cls.return_value = runner
+
+        args = _cascade_args(sprint_id="s1", max_tasks=2)
+        cmd_cascade(args)
+
+        runner.run.assert_called_once_with(
+            sprint_id="s1",
+            goal="Deploy SHIR and bronze layer",
+            abort_threshold=0.5,
+            max_tasks=2,
+        )
+
+    @patch("main.get_settings")
+    def test_dry_run(self, mock_get_settings, capsys):
+        """--dry-run prints info without executing."""
+        settings = _make_settings()
+        mock_get_settings.return_value = settings
+
+        args = _cascade_args(dry_run=True, sprint_id="sprint-9")
+        cmd_cascade(args)
+
+        output = capsys.readouterr().out
+        assert "Dry run" in output
+        assert "sprint-9" in output
+
+    @patch("main.get_settings")
+    def test_list_empty(self, mock_get_settings, tmp_path, capsys):
+        """--list with no saved runs prints 'No saved runs'."""
+        settings = _make_settings()
+        settings.data_dir = str(tmp_path)
+        mock_get_settings.return_value = settings
+
+        args = _cascade_args(prompt=None, **{"list": True})
+        cmd_cascade(args)
+
+        output = capsys.readouterr().out
+        assert "No saved runs" in output
+
+    @patch("main.get_settings")
+    def test_list_shows_saved_runs(self, mock_get_settings, tmp_path, capsys):
+        """--list displays saved cascade run files."""
+        settings = _make_settings()
+        settings.data_dir = str(tmp_path)
+        mock_get_settings.return_value = settings
+
+        cascade_dir = tmp_path / "cascade"
+        cascade_dir.mkdir()
+        state = {"status": "completed", "tasks": [{"id": "T1"}, {"id": "T2"}]}
+        (cascade_dir / "sprint-8.json").write_text(json.dumps(state))
+
+        args = _cascade_args(prompt=None, **{"list": True})
+        cmd_cascade(args)
+
+        output = capsys.readouterr().out
+        assert "sprint-8" in output
+        assert "completed" in output
+        assert "tasks=2" in output
+
+    @patch("main.get_settings")
+    def test_show_displays_state(self, mock_get_settings, tmp_path, capsys):
+        """--show reads and prints saved state JSON."""
+        settings = _make_settings()
+        settings.data_dir = str(tmp_path)
+        mock_get_settings.return_value = settings
+
+        cascade_dir = tmp_path / "cascade"
+        cascade_dir.mkdir()
+        state = {"status": "completed", "sprint_id": "sprint-8"}
+        (cascade_dir / "sprint-8.json").write_text(json.dumps(state))
+
+        args = _cascade_args(prompt=None, show="sprint-8")
+        cmd_cascade(args)
+
+        output = capsys.readouterr().out
+        assert '"sprint_id": "sprint-8"' in output
+
+    @patch("main.get_settings")
+    def test_show_missing_exits(self, mock_get_settings, tmp_path):
+        """--show with nonexistent sprint ID exits with error."""
+        settings = _make_settings()
+        settings.data_dir = str(tmp_path)
+        mock_get_settings.return_value = settings
+
+        args = _cascade_args(prompt=None, show="nonexistent")
+        with pytest.raises(SystemExit):
+            cmd_cascade(args)
+
+    @patch("main.resolve_tool_class")
+    @patch("orchestration.CascadeRunner")
+    @patch("main.get_settings")
+    def test_sync_flag(self, mock_get_settings, mock_runner_cls, mock_resolve, tmp_path):
+        """--sync calls Notion sync before cascade."""
+        settings = _make_settings()
+        settings.data_dir = str(tmp_path)
+        mock_get_settings.return_value = settings
+
+        tool = MagicMock()
+        tool.sync.return_value = MagicMock(counts={"work_items": 5})
+        tool_cls = MagicMock(return_value=tool)
+        mock_resolve.return_value = tool_cls
+
+        runner = MagicMock()
+        runner.run.return_value = {"sprint_id": "s1", "status": "completed",
+                                    "tasks": [], "task_results": {},
+                                    "errors": [], "failed_task_ids": [],
+                                    "plan": {}, "current_task_index": 0,
+                                    "iteration_counts": {},
+                                    "abort_threshold": 0.5, "max_tasks": 0}
+        mock_runner_cls.return_value = runner
+
+        args = _cascade_args(sprint_id="s1", sync=True)
+        cmd_cascade(args)
+
+        tool.sync.assert_called_once()
+        runner.run.assert_called_once()
+
+    @patch("orchestration.CascadeRunner")
+    @patch("main.get_settings")
+    def test_default_sprint_id(self, mock_get_settings, mock_runner_cls, tmp_path):
+        """Sprint ID defaults to timestamp-based format when not provided."""
+        settings = _make_settings()
+        settings.data_dir = str(tmp_path)
+        mock_get_settings.return_value = settings
+
+        runner = MagicMock()
+        runner.run.return_value = {"sprint_id": "auto", "status": "completed",
+                                    "tasks": [], "task_results": {},
+                                    "errors": [], "failed_task_ids": [],
+                                    "plan": {}, "current_task_index": 0,
+                                    "iteration_counts": {},
+                                    "abort_threshold": 0.5, "max_tasks": 0}
+        mock_runner_cls.return_value = runner
+
+        args = _cascade_args()  # no sprint_id
+        cmd_cascade(args)
+
+        call_kwargs = runner.run.call_args[1]
+        assert call_kwargs["sprint_id"].startswith("sprint-")
+
+    @patch("main.get_settings")
+    def test_no_prompt_no_list_no_show_exits(self, mock_get_settings):
+        """Missing prompt without --list or --show exits with error."""
+        settings = _make_settings()
+        mock_get_settings.return_value = settings
+
+        args = _cascade_args(prompt=None)
+        with pytest.raises(SystemExit):
+            cmd_cascade(args)
+
+    @patch("orchestration.CascadeRunner")
+    @patch("main.get_settings")
+    def test_model_override(self, mock_get_settings, mock_runner_cls, tmp_path):
+        """--model overrides the Ollama model in settings."""
+        settings = _make_settings()
+        settings.data_dir = str(tmp_path)
+        settings.ollama_model = "qwen2.5-coder:7b"
+        mock_get_settings.return_value = settings
+
+        runner = MagicMock()
+        runner.run.return_value = {"sprint_id": "s1", "status": "completed",
+                                    "tasks": [], "task_results": {},
+                                    "errors": [], "failed_task_ids": [],
+                                    "plan": {}, "current_task_index": 0,
+                                    "iteration_counts": {},
+                                    "abort_threshold": 0.5, "max_tasks": 0}
+        mock_runner_cls.return_value = runner
+
+        args = _cascade_args(sprint_id="s1", model="mistral:7b")
+        cmd_cascade(args)
+
+        assert settings.ollama_model == "mistral:7b"

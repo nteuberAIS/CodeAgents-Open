@@ -71,15 +71,43 @@
 - [x] Top performers: qwen2.5-coder:3b (1.000 avg, 115 tok/s) and qwen2.5-coder:7b (1.000 avg, 52.7 tok/s)
 - [x] Results in `evals/benchmarks/RESULTS.md`
 
-## Phase 3: Multi-Agent Cascade
-> Sub-phased (3a, 3b, etc.) — breakdown TBD.
+## Phase 3a: Structured Error Return ✓
+- [x] AgentResult schema with `success`, `error_type`, `error_message`, `partial_output`
+- [x] All agents return structured results (no raw strings)
+- [x] Error classification: `llm_error`, `tool_error`, `validation_error`, `timeout`
 
-- [ ] Aider CLI integration (CoderAgent wraps Aider for code generation)
-- [ ] CoderAgent — generates code changes from sprint tasks
-- [ ] TesterAgent — runs tests, reports results
-- [ ] UpdaterAgent — pushes to Notion, creates PRs
-- [ ] LangGraph StateGraph orchestration (Planner → Coder → Tester → Updater)
-- [ ] Reflection loops with iteration caps (kill rabbit holes)
+## Phase 3b: SprintState Schema ✓
+- [x] SprintState TypedDict for LangGraph cascade state
+- [x] Reducer fields for errors and failed_task_ids (LangGraph `Annotated[list, operator.add]`)
+- [x] Pure helper functions: `create_initial_state`, `get_current_task`, `advance_task`, `should_abort`
+
+## Phase 3c: Aider Tool ✓
+- [x] AiderTool wrapping Aider CLI for AI-assisted code edits
+- [x] Dry-run mode, configurable timeout, model passthrough
+- [x] Registered in tool_registry
+
+## Phase 3d: CoderAgent ✓
+- [x] CoderAgent wraps AiderTool for code generation from sprint tasks
+- [x] Accepts test feedback for outer retry loop
+- [x] Prompt templates in `prompts/coder/`
+
+## Phase 3e: TesterAgent + UpdaterAgent ✓
+- [x] TesterAgent runs pytest, parses results, reports pass/fail
+- [x] UpdaterAgent creates PRs and updates Notion status
+- [x] Both registered in agent_registry
+
+## Phase 3f: LangGraph Cascade ✓
+- [x] StateGraph orchestration: plan → setup → code → test → update → check
+- [x] Inner reflection: CoderAgent retries Aider internally (up to 5 iterations)
+- [x] Outer reflection: test failures route back to code_node (up to 2 retries)
+- [x] Abort threshold: cascade stops if too many tasks fail
+- [x] CascadeRunner high-level wrapper with summary reporting
+
+## Phase 3g: CLI Integration + Docs ✓
+- [x] `cascade` CLI subcommand with `--dry-run`, `--max-tasks`, `--sprint-id`, `--sync`, `--model`
+- [x] State persistence to `data/cascade/{sprint_id}.json`
+- [x] `--list` and `--show` for viewing past runs
+- [x] Documentation updates (roadmap, architecture, project outline)
 
 ## Phase 4: RAG & Context
 - [ ] Local Notion mirror (export → vector DB)

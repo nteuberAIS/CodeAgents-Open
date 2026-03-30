@@ -35,6 +35,7 @@ class CascadeRunner:
         sprint_id: str,
         goal: str = "",
         abort_threshold: float = 0.5,
+        max_tasks: int = 0,
     ) -> SprintState:
         """Execute the full cascade and return the final state.
 
@@ -42,6 +43,7 @@ class CascadeRunner:
             sprint_id: Identifier for this sprint (e.g. "sprint-8").
             goal: Sprint goal passed to SprintPlannerAgent.
             abort_threshold: Fraction of tasks that can fail before aborting.
+            max_tasks: Limit tasks processed (0 = no limit).
 
         Returns:
             The final SprintState after all nodes have executed.
@@ -57,6 +59,7 @@ class CascadeRunner:
             "status": "planning",
             "failed_task_ids": [],
             "abort_threshold": abort_threshold,
+            "max_tasks": max_tasks,
         }
 
         final_state = self.graph.invoke(
