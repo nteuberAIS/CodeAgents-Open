@@ -12,6 +12,7 @@ from evals.base_eval import BaseEval, EvalResult
 # Registry of eval suites — maps agent name to eval class import path
 EVAL_REGISTRY: dict[str, str] = {
     "sprint_planner": "evals.sprint_planner_eval.SprintPlannerEval",
+    "coder": "evals.coder_eval.CoderEval",
 }
 
 

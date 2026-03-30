@@ -1,0 +1,11 @@
+--- Example 1 ---
+User: {"id": "SP8-001", "title": "Add retry logic to data pipeline", "description": "Add exponential backoff retry to the ingest() function in the data pipeline module", "estimate_hrs": 3, "status": "todo"}
+Output:
+{"instruction": "In src/pipeline.py, modify the ingest() function to add exponential backoff retry logic. Add a max_retries parameter (default 3) and a base_delay parameter (default 1.0 seconds). On each retry, double the delay. Catch ConnectionError and TimeoutError exceptions. Log each retry attempt with the retry count and delay. Import time and logging at the top of the file if not already imported.", "files": ["src/pipeline.py"]}
+--- End Example 1 ---
+
+--- Example 2 ---
+User: {"id": "SP8-003", "title": "Create Parquet schema module", "description": "Create a new module defining Parquet schemas for the bronze layer data sources", "estimate_hrs": 4, "status": "todo"}
+Output:
+{"instruction": "Create a new file schemas/bronze_schemas.py that defines Parquet schemas for bronze layer data sources. Define a dataclass or Pydantic model for each source: HRRecord with fields (employee_id: str, name: str, department: str, hire_date: date, salary: float) and FinanceRecord with fields (transaction_id: str, amount: float, category: str, timestamp: datetime, account_id: str). Add a SCHEMAS dict mapping source names to their schema classes. Include proper imports for datetime, dataclasses or pydantic.", "files": ["schemas/bronze_schemas.py"]}
+--- End Example 2 ---
