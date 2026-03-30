@@ -13,6 +13,8 @@ from evals.base_eval import BaseEval, EvalResult
 EVAL_REGISTRY: dict[str, str] = {
     "sprint_planner": "evals.sprint_planner_eval.SprintPlannerEval",
     "coder": "evals.coder_eval.CoderEval",
+    "tester": "evals.tester_eval.TesterEval",
+    "updater": "evals.updater_eval.UpdaterEval",
 }
 
 
