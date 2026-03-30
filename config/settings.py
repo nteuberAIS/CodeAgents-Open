@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     agent_registry: dict[str, str] = {
         "sprint_planner": "agents.sprint_planner.SprintPlannerAgent",
         "coder": "agents.coder.CoderAgent",
+        "tester": "agents.tester.TesterAgent",
+        "updater": "agents.updater.UpdaterAgent",
     }
 
     # -- Tool registry --
@@ -66,6 +68,11 @@ class Settings(BaseSettings):
     aider_model: str | None = None                  # Full provider-prefixed model (e.g. "ollama/qwen2.5-coder:7b"); auto-derived from ollama_model if None
     aider_timeout: int = 120                        # Subprocess timeout in seconds
     aider_repo_dir: str | None = None               # Path to target repo for Aider edits
+
+    # -- TesterAgent (Phase 3e) --
+    test_command: str = "pytest"                     # Test command to run
+    test_timeout: int = 300                          # Test subprocess timeout in seconds (5 min)
+    test_repo_dir: str | None = None                 # Target repo for tests (falls back to aider_repo_dir)
 
     # -- Future config hooks (uncomment as needed) --
     # rag_retriever_path: str | None = None        # Path to local Notion mirror / vector DB
