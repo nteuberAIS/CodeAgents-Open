@@ -41,6 +41,7 @@ python main.py run "..." --dry-run     # Show what would happen
 python main.py cascade "Deploy SHIR"          # Run full cascade (Planner→Coder→Tester→Updater)
 python main.py cascade "..." --dry-run        # Show what would happen
 python main.py cascade "..." --max-tasks 2    # Limit tasks processed
+python main.py cascade "..." --abort-threshold 0.3  # Custom failure threshold (default: 0.5)
 python main.py cascade "..." --sprint-id s-8  # Explicit sprint ID
 python main.py cascade --list                 # List past cascade runs
 python main.py cascade --show sprint-8        # Show saved state for a run
