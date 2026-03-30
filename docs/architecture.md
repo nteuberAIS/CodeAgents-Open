@@ -25,13 +25,17 @@ CodeAgents-Open/
 ├── config/
 │   └── settings.py         # Pydantic settings, LLM factory, registries
 ├── data/
-│   └── notion/
-│       ├── *.json           # Cloud snapshots (never modified)
-│       ├── content/*.md     # Page content as markdown
-│       ├── templates/       # Database templates
-│       ├── pending_changes.json  # Local mutation changelog
-│       └── local_snapshot.json   # Merged local state
-├── tests/                  # 266 tests, all mocked
+│   ├── notion/
+│   │   ├── *.json           # Cloud snapshots (never modified)
+│   │   ├── content/*.md     # Page content as markdown
+│   │   ├── templates/       # Database templates
+│   │   ├── pending_changes.json  # Local mutation changelog
+│   │   └── local_snapshot.json   # Merged local state
+│   └── cascade/            # Saved cascade run states (JSON)
+├── orchestration/
+│   ├── cascade.py          # LangGraph StateGraph (plan→code→test→update)
+│   └── runner.py           # CascadeRunner high-level wrapper
+├── tests/                  # All mocked
 ├── docs/                   # Project documentation
 ├── main.py                 # CLI entry point
 └── requirements.txt
@@ -55,8 +59,9 @@ Same pattern as agents. Tools are loadable classes that agents bind via
 - `github` — GitHub CLI (`gh`) for branches, PRs, commits
 - `azdevops` — Azure DevOps CLI (`az repos`) for branches, PRs, commits
 
+- `aider` — Aider CLI for AI-assisted code edits
+
 Planned:
-- `aider_tool` — Aider CLI for AI-assisted code edits
 - `continue_tool` — Continue.dev IDE integration
 
 ### Page Content Architecture
@@ -92,22 +97,27 @@ implemented — requires human approval).
 `get_llm()` creates a `ChatOllama` instance from settings. All config is
 env-var overridable (set `OLLAMA_MODEL=mistral:7b` to swap models).
 
-## Future Architecture: Multi-Agent Cascade
+## Multi-Agent Cascade (Phase 3)
+
+The cascade is orchestrated via LangGraph `StateGraph`. Each agent is a graph
+node; conditional edges define the flow with reflection loops.
 
 ```
-User Prompt
+python main.py cascade "Deploy SHIR"
     │
     ▼
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
 │   Planner    │────▶│    Coder     │────▶│    Tester    │────▶│   Updater    │
-│ (sprint plan)│     │ (code edits) │     │ (run tests)  │     │ (Notion/git) │
+│ (sprint plan)│     │ (Aider CLI)  │     │ (pytest)     │     │ (Notion/git) │
 └──────────────┘     └──────────────┘     └──────────────┘     └──────────────┘
-       │                    │                    │                    │
-       ▼                    ▼                    ▼                    ▼
-   RAG Context         Aider/Continue       pytest/lint          Notion API
-   (Notion mirror)     (code tools)         (validation)         Azure DevOps
+                          ▲    │                │
+                          │    ▼                │
+                          └── test failure ─────┘
+                          (outer retry, max 2)
 ```
 
-This cascade will be orchestrated via LangGraph `StateGraph`, where each agent
-is a node and edges define the flow. Reflection loops at each node prevent
-rabbit holes (capped iterations).
+**Key components:**
+- `orchestration/cascade.py` — StateGraph with 6 nodes and conditional routing
+- `orchestration/runner.py` — CascadeRunner wraps graph invocation + summary
+- `schemas/sprint_state.py` — SprintState TypedDict with reducer fields
+- State saved to `data/cascade/{sprint_id}.json` after completion

@@ -34,6 +34,7 @@ class SprintState(TypedDict):
     status: str                                         # running | completed | aborted | escalated
     failed_task_ids: Annotated[list[str], operator.add]  # Task IDs that were skipped
     abort_threshold: float                              # Fraction of tasks that can fail (default 0.5)
+    max_tasks: int                                      # Limit tasks processed (0 = no limit)
 
 
 # ---------------------------------------------------------------------------

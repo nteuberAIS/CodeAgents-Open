@@ -7,13 +7,14 @@ Usage:
     python main.py run "Plan sprint 1.4" --sync      # Sync first, then run
     python main.py run "Plan sprint 1.4" --dry-run   # Show what would happen
     python main.py run "Plan sprint 1.4" --no-tools  # LLM planning only
+    python main.py cascade "Deploy SHIR"             # Run full cascade
+    python main.py cascade "Deploy SHIR" --dry-run   # Show what would happen
+    python main.py cascade "Deploy SHIR" --max-tasks 2  # Limit tasks
+    python main.py cascade --list                    # List past cascade runs
+    python main.py cascade --show sprint-8           # Show saved state
     python main.py benchmark                         # Benchmark models
     python main.py benchmark --models a:7b,b:3b      # Specific models
     python main.py benchmark --runs 1 --dry-run      # Quick preview
-
-Future:
-- Agent chaining: Planner -> Coder -> Tester -> Updater
-- LangGraph workflow orchestration replaces sequential calls
 """
 
 from __future__ import annotations
@@ -225,6 +226,89 @@ def cmd_benchmark(args) -> None:
     runner.print_summary(benchmark)
 
 
+def cmd_cascade(args) -> None:
+    """Handle the 'cascade' subcommand."""
+    from datetime import datetime
+
+    from orchestration import CascadeRunner
+
+    settings = get_settings()
+    cascade_dir = Path(settings.data_dir) / "cascade"
+
+    # Handle --list: show saved cascade runs
+    if args.list:
+        if not cascade_dir.exists():
+            print("[Cascade] No saved runs.")
+            return
+        files = sorted(cascade_dir.glob("*.json"))
+        if not files:
+            print("[Cascade] No saved runs.")
+            return
+        for f in files:
+            try:
+                data = json.loads(f.read_text())
+                status = data.get("status", "unknown")
+                task_count = len(data.get("tasks", []))
+                print(f"  {f.stem}  status={status}  tasks={task_count}")
+            except Exception:
+                print(f"  {f.stem}  (unreadable)")
+        return
+
+    # Handle --show: display a specific saved state
+    if args.show:
+        state_path = cascade_dir / f"{args.show}.json"
+        if not state_path.exists():
+            print(f"[Cascade] No saved state for '{args.show}'")
+            sys.exit(1)
+        data = json.loads(state_path.read_text())
+        print(json.dumps(data, indent=2))
+        return
+
+    # Require prompt for actual cascade runs
+    if not args.prompt:
+        print("[Cascade] Error: prompt is required (or use --list/--show)")
+        sys.exit(1)
+
+    # Allow model override from CLI
+    if args.model:
+        settings.ollama_model = args.model
+
+    # Optional pre-sync
+    if args.sync:
+        tool_cls = resolve_tool_class("notion", settings)
+        tool = tool_cls(settings=settings)
+        meta = tool.sync(dry_run=args.dry_run)
+        action = "Would sync" if args.dry_run else "Synced"
+        print(f"[Sync] {action}: {sum(meta.counts.values())} pages across {len(meta.counts)} databases")
+
+    # Derive sprint_id
+    sprint_id = args.sprint_id or f"sprint-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+
+    if args.dry_run:
+        print(f"[Cascade] Dry run — would run cascade for '{sprint_id}'")
+        print(f"[Cascade] Goal: {args.prompt}")
+        print(f"[Cascade] Abort threshold: {args.abort_threshold}")
+        if args.max_tasks:
+            print(f"[Cascade] Max tasks: {args.max_tasks}")
+        return
+
+    runner = CascadeRunner(settings, dry_run=False)
+    max_tasks = args.max_tasks or 0
+    final_state = runner.run(
+        sprint_id=sprint_id,
+        goal=args.prompt,
+        abort_threshold=args.abort_threshold,
+        max_tasks=max_tasks,
+    )
+
+    # Save final state
+    cascade_dir.mkdir(parents=True, exist_ok=True)
+    state_path = cascade_dir / f"{sprint_id}.json"
+    with open(state_path, "w") as f:
+        json.dump(final_state, f, indent=2, default=str)
+    print(f"[Cascade] State saved to {state_path}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Local AI agent system for sprint automation.",
@@ -298,6 +382,60 @@ def main() -> None:
         help="Show eval cases without running them.",
     )
 
+    # -- cascade subcommand --
+    cascade_parser = subparsers.add_parser(
+        "cascade",
+        help="Run the full agent cascade (Planner → Coder → Tester → Updater).",
+    )
+    cascade_parser.add_argument(
+        "prompt",
+        nargs="?",
+        default=None,
+        help="Sprint goal / planning instruction.",
+    )
+    cascade_parser.add_argument(
+        "--sprint-id",
+        default=None,
+        help="Explicit sprint ID (default: sprint-YYYYMMDD-HHMMSS).",
+    )
+    cascade_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would happen without executing.",
+    )
+    cascade_parser.add_argument(
+        "--max-tasks",
+        type=int,
+        default=None,
+        help="Limit number of tasks processed (safety valve).",
+    )
+    cascade_parser.add_argument(
+        "--abort-threshold",
+        type=float,
+        default=0.5,
+        help="Fraction of tasks that can fail before aborting (default: 0.5).",
+    )
+    cascade_parser.add_argument(
+        "--sync",
+        action="store_true",
+        help="Sync Notion databases before running.",
+    )
+    cascade_parser.add_argument(
+        "--model",
+        default=None,
+        help="Override the Ollama model.",
+    )
+    cascade_parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List saved cascade runs.",
+    )
+    cascade_parser.add_argument(
+        "--show",
+        default=None,
+        help="Show saved state for a specific sprint ID.",
+    )
+
     # -- benchmark subcommand --
     bench_parser = subparsers.add_parser(
         "benchmark",
@@ -331,6 +469,8 @@ def main() -> None:
         cmd_sync(args)
     elif args.command == "run":
         cmd_run(args)
+    elif args.command == "cascade":
+        cmd_cascade(args)
     elif args.command == "eval":
         cmd_eval(args)
     elif args.command == "benchmark":

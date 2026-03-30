@@ -69,6 +69,11 @@ def plan_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
         state["sprint_id"],
         state.get("abort_threshold", 0.5),
     )
+    # Truncate tasks if max_tasks is set
+    max_tasks = state.get("max_tasks", 0)
+    if max_tasks > 0:
+        new_state["tasks"] = new_state["tasks"][:max_tasks]
+
     # If the plan produced no tasks, mark completed immediately
     status = "completed" if not new_state["tasks"] else new_state["status"]
     # Return fields for LangGraph to merge.  Reducer fields must be fresh lists.
