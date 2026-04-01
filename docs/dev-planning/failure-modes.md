@@ -152,9 +152,62 @@ Console output only for Phase 3. Structured file logging comes in Phase 6.
 - Failure mode handling is closely related to prompt management (how error
   context is fed back to agents).
 
+## Phase 3.5 — First End-to-End Validation Findings
+
+> **Date**: 2026-03-31
+> **Sprint tested**: Sprint 1.4 (s-1.4)
+> **Mode**: Dry-run (no actual pushes, no real code changes)
+
+### Pre-Run Bugs Found and Fixed (5)
+
+| # | Bug | Root Cause | Fix |
+|---|-----|-----------|-----|
+| 1 | `--dry-run` never ran the cascade | `main.py` short-circuited with early return; hardcoded `dry_run=False` | Removed early return, pass flag through |
+| 2 | TesterAgent crashes on Windows with no tests | `subprocess.run([])` raises OSError; `echo` is a shell builtin on Windows | Added skip mode: `TEST_COMMAND=skip` returns `test_passed: True` |
+| 3 | `.env` missing `AIDER_REPO_DIR`, `TEST_COMMAND` | Only `NOTION_API_KEY` was configured | Added values |
+| 4 | `plan_node` had no Notion context | `cascade.py` never loaded snapshot data | Added `_load_notion_context()` + `curate_context()` |
+| 5 | Sprint matching only found `status=="Active"` | Sprint 1.4 was "Not started" | Extended to match Not started, In Progress |
+
+### Runtime Issues Found (6)
+
+| # | Issue | Severity | Resolution |
+|---|-------|----------|------------|
+| 1 | Planner generated synthetic tasks instead of using Notion items | High | Architectural: separated SprintPlanner (sprint planning) from cascade (Notion data loading). New TaskPlannerAgent handles per-task implementation planning. |
+| 2 | Branch naming collision (`sprint-1/...` for all Phase 1 sprints) | Medium | Use CLI `sprint_id` (e.g. "1.4") instead of numeric `sprint_number` for branch naming |
+| 3 | `pr_created: true` but `pr_url: null` in dry-run | Low | Added `dry_run` field to updater output for clarity |
+| 4 | `notion_updated: false` on all tasks | Low | Resolved by using real Notion work items (issue #1 fix) |
+| 5 | No console progress output during cascade | Low | Added `print()` per node + changed `print_summary` from `logger.info` to `print` |
+| 6 | Aider not installed | Info | Required for live runs: `pip install aider-chat` |
+
+### Architectural Insight: SprintPlanner ≠ TaskPlanner
+
+The SprintPlannerAgent was incorrectly used in the cascade to generate tasks. In reality:
+- **Sprint planning** = deciding WHAT to do (already done in Notion)
+- **Task planning** = deciding HOW to implement a specific work item
+
+The cascade now:
+1. `plan_node` loads existing Notion tasks (no LLM)
+2. `task_plan_node` runs TaskPlannerAgent per task (optional, non-fatal on failure)
+3. CoderAgent receives enriched context from TaskPlanner
+
+### Failure Scenarios Observed
+
+1. **Missing config values**: Cascade ran but tools silently degraded. Need explicit validation of required config at startup.
+2. **Sprint status mismatch**: "Not started" sprints were invisible to the planner. Need flexible matching by name/ID, not just status.
+3. **Shell builtins on Windows**: `subprocess.run(["echo", ...])` fails silently. Any subprocess-based tool needs Windows compatibility testing.
+4. **Dry-run output ambiguity**: `pr_created: true` when no PR exists is misleading. All dry-run outputs need a `dry_run` flag.
+5. **Shared sprint_number across sub-sprints**: Phase 1 sprints 1.1-1.4 all have `sprint_number: 1`. Any identifier derived from this field will collide.
+
+### Remaining Gaps for Phase 4
+
+- Aider integration untested (not installed; dry-run mocked the tool)
+- Azure DevOps PR creation untested (no config; tool binding skipped gracefully)
+- Notion write-back untested with real IDs (dry-run used local snapshot)
+- No structured logging of cascade execution (console print only)
+
 ## Next Steps
 
-- [ ] Brainstorm failure scenarios from first few live sprint runs
+- [x] Brainstorm failure scenarios from first few live sprint runs
 - [x] Define minimum viable error handling for Phase 3
 - [ ] Design failure logging format for post-mortem analysis
 - [x] Decide on iteration caps per agent type

@@ -190,18 +190,18 @@ class BaseGitTool(ABC):
     #  Branching strategy helpers                                         #
     # ------------------------------------------------------------------ #
 
-    def task_branch_name(self, sprint_number: int, task_id: str) -> str:
+    def task_branch_name(self, sprint_number: int | str, task_id: str) -> str:
         """Generate branch name per project convention.
 
         Convention: sprint-{N}/{task-id}
-        Example: sprint-8/SP8-001
+        Example: sprint-1.4/SP8-001
         """
         return f"sprint-{sprint_number}/{task_id}"
 
-    def sprint_branch_name(self, sprint_number: int) -> str:
+    def sprint_branch_name(self, sprint_number: int | str) -> str:
         """Generate sprint branch name.
 
         Convention: sprint-{N}
-        Example: sprint-8
+        Example: sprint-1.4
         """
         return f"sprint-{sprint_number}"
