@@ -159,11 +159,14 @@ class SprintPlannerAgent(BaseAgent):
         work_items = self.context.get("work_items", [])
         risks = self.context.get("risks", [])
 
-        # Find active sprint
+        # Find target sprint: prefer "Active", then "Not started", then "In Progress"
         active = None
-        for s in sprints:
-            if s.get("status") == "Active":
-                active = s
+        for status in ("Active", "Not started", "In Progress"):
+            for s in sprints:
+                if s.get("status") == status:
+                    active = s
+                    break
+            if active:
                 break
 
         sprint_name = active["name"] if active else "No active sprint"

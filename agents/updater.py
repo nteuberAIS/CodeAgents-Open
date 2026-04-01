@@ -78,6 +78,7 @@ class UpdaterAgent(BaseAgent):
         pr_error = None
 
         git_tool = self.get_tool("azdevops") or self.get_tool("github")
+        is_dry_run = getattr(git_tool, "dry_run", False) if git_tool else False
         if git_tool and source_branch and target_branch:
             pr_created, pr_url, pr_error = self._create_pr_with_retry(
                 git_tool=git_tool,
@@ -117,6 +118,7 @@ class UpdaterAgent(BaseAgent):
                     "notion_updated": notion_updated,
                     "notion_status": notion_status,
                     "task_id": task_id,
+                    "dry_run": is_dry_run,
                 },
                 error_type="tool",
                 error_message=pr_error or "All operations failed",
@@ -131,6 +133,7 @@ class UpdaterAgent(BaseAgent):
                 "notion_updated": notion_updated,
                 "notion_status": notion_status,
                 "task_id": task_id,
+                "dry_run": is_dry_run,
             },
         )
 

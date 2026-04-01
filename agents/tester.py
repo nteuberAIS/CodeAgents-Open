@@ -60,6 +60,20 @@ class TesterAgent(BaseAgent):
         test_command = params.get("test_command") or settings.test_command
         timeout = settings.test_timeout
 
+        # Skip mode: no test command configured for this repo
+        if test_command.lower() in ("skip", "none", ""):
+            return self.wrap_result(
+                success=True,
+                partial_output={
+                    "test_passed": True,
+                    "passed_count": 0,
+                    "failed_count": 0,
+                    "error_count": 0,
+                    "test_output": "Tests skipped (no test command configured)",
+                    "task_id": task_id,
+                },
+            )
+
         if not repo_dir:
             return self.wrap_result(
                 success=False,
