@@ -2,6 +2,9 @@
 
 All agents are mocked — these tests verify graph traversal logic,
 conditional routing, retry behavior, and state transitions.
+
+plan_node validates pre-loaded tasks (no data loading or LLM).
+coder/tester/updater use their respective agents.
 """
 
 from __future__ import annotations
@@ -26,34 +29,41 @@ from schemas.sprint_state import SprintState
 # Helpers — result factories
 # ---------------------------------------------------------------------------
 
-def _make_plan_result(num_tasks: int = 2, success: bool = True) -> dict:
-    """SprintPlannerAgent result envelope."""
-    if not success:
-        return {
-            "success": False,
-            "error_type": "llm",
-            "error_message": "LLM produced invalid JSON",
-            "partial_output": {"raw_output": "bad json"},
-        }
+def _make_notion_context(num_tasks: int = 2, sprint_id: str = "sprint-8") -> dict:
+    """Mock Notion context with a sprint and linked work items."""
+    sprint_notion_id = "test-sprint-id"
     return {
-        "success": True,
-        "error_type": None,
-        "error_message": None,
-        "partial_output": {
-            "sprint": 8,
-            "goal": "Test sprint",
-            "tasks": [
-                {
-                    "id": f"SP8-{i:03d}",
-                    "title": f"Task {i}",
-                    "description": f"Do thing {i}",
-                    "estimate_hrs": 2,
-                    "status": "todo",
-                }
-                for i in range(1, num_tasks + 1)
-            ],
-            "dependencies": [],
-        },
+        "sprints": [
+            {
+                "notion_id": sprint_notion_id,
+                "name": f"Sprint {sprint_id.lstrip('s-').lstrip('sprint-')}",
+                "status": "Not started",
+                "sprint_number": 8,
+                "goal": "Test sprint goal",
+                "start_date": "2026-04-01",
+                "end_date": "2026-04-07",
+                "work_item_ids": [f"wi-{i}" for i in range(1, num_tasks + 1)],
+                "risk_ids": [],
+                "has_content": False,
+            }
+        ],
+        "work_items": [
+            {
+                "notion_id": f"wi-{i}",
+                "name": f"Task {i}",
+                "type": "Task",
+                "status": "Ready",
+                "priority": "P1",
+                "estimate_hrs": 2,
+                "sprint_id": sprint_notion_id,
+                "owner": None,
+                "has_content": False,
+            }
+            for i in range(1, num_tasks + 1)
+        ],
+        "docs": [],
+        "decisions": [],
+        "risks": [],
     }
 
 
@@ -130,6 +140,7 @@ def _make_updater_result(success: bool = True) -> dict:
                 "pr_url": None,
                 "notion_updated": False,
                 "task_id": "",
+                "dry_run": False,
             },
         }
     return {
@@ -139,10 +150,11 @@ def _make_updater_result(success: bool = True) -> dict:
         "partial_output": {
             "pr_created": True,
             "pr_url": "https://github.com/org/repo/pull/42",
-            "pr_title": "SP8-001: Add error handling",
+            "pr_title": "wi-1: Add error handling",
             "notion_updated": True,
             "notion_status": "In Review",
             "task_id": "",
+            "dry_run": False,
         },
     }
 
@@ -189,16 +201,12 @@ def _mock_agent_class(run_returns):
 
 
 def _build_agent_map(
-    plan_result=None,
     coder_result=None,
     tester_result=None,
     updater_result=None,
 ):
     """Build a dict of agent_name -> mock class for patching resolve_agent_class."""
     agents = {}
-    agents["sprint_planner"] = _mock_agent_class(
-        plan_result if plan_result is not None else _make_plan_result()
-    )
     agents["coder"] = _mock_agent_class(
         coder_result if coder_result is not None else _make_coder_result()
     )
@@ -211,18 +219,52 @@ def _build_agent_map(
     return agents
 
 
+def _tasks_from_context(notion_context: dict, sprint_id: str) -> list[dict]:
+    """Extract task dicts from a Notion context, matching the CLI layer logic."""
+    # Find the sprint
+    sprint_notion_id = None
+    for s in notion_context.get("sprints", []):
+        sprint_notion_id = s["notion_id"]
+        break  # test contexts have exactly one sprint
+
+    if sprint_notion_id is None:
+        return []
+
+    return [
+        {
+            "id": wi["notion_id"],
+            "notion_id": wi["notion_id"],
+            "title": wi.get("name", "Untitled"),
+            "description": "",
+            "status": wi.get("status", "Ready"),
+            "priority": wi.get("priority", ""),
+            "estimate_hrs": wi.get("estimate_hrs", 0),
+            "type": wi.get("type", "Task"),
+        }
+        for wi in notion_context.get("work_items", [])
+        if wi.get("sprint_id") == sprint_notion_id
+    ]
+
+
 def _patch_and_run(
     agent_map: dict,
     sprint_id: str = "sprint-8",
     goal: str = "Test goal",
     abort_threshold: float = 0.5,
     dry_run: bool = False,
+    num_tasks: int = 2,
+    tasks: list[dict] | None = None,
 ) -> SprintState:
-    """Patch resolve_agent_class, get_llm, resolve_tool_class and run the cascade."""
+    """Patch agents and run the cascade with pre-loaded tasks."""
     def mock_resolve(name, settings=None):
         if name in agent_map:
             return agent_map[name]
         raise ValueError(f"Unknown agent: {name}")
+
+    # Build tasks from notion context if not explicitly provided
+    if tasks is None:
+        context = _make_notion_context(num_tasks=num_tasks, sprint_id=sprint_id)
+        tasks = _tasks_from_context(context, sprint_id)
 
     with (
         patch("orchestration.cascade.resolve_agent_class", side_effect=mock_resolve),
@@ -232,11 +274,12 @@ def _patch_and_run(
         settings = MagicMock()
         settings.test_repo_dir = None
         settings.aider_repo_dir = None
+        settings.data_dir = "data"
         graph = build_cascade_graph(settings, dry_run=dry_run)
         initial_state: SprintState = {
             "sprint_id": sprint_id,
             "plan": {"goal": goal},
-            "tasks": [],
+            "tasks": tasks,
             "current_task_index": 0,
             "task_results": {},
             "errors": [],
@@ -245,7 +288,7 @@ def _patch_and_run(
             "failed_task_ids": [],
             "abort_threshold": abort_threshold,
         }
-        return graph.invoke(initial_state, config={"recursion_limit": 100})
+        return graph.invoke(initial_state, config={"recursion_limit": 200})
 
 
 # ---------------------------------------------------------------------------
@@ -254,9 +297,9 @@ def _patch_and_run(
 
 class TestHappyPath:
     def test_two_tasks_all_succeed(self):
-        """Planner returns 2 tasks, all agents succeed → completed."""
-        agents = _build_agent_map(plan_result=_make_plan_result(num_tasks=2))
-        state = _patch_and_run(agents)
+        """plan_node loads 2 tasks from Notion, all agents succeed → completed."""
+        agents = _build_agent_map()
+        state = _patch_and_run(agents, num_tasks=2)
 
         assert state["status"] == "completed"
         assert len(state["failed_task_ids"]) == 0
@@ -272,31 +315,31 @@ class TestHappyPath:
 
     def test_single_task_succeeds(self):
         """Simplest case: 1 task, all pass."""
-        agents = _build_agent_map(plan_result=_make_plan_result(num_tasks=1))
-        state = _patch_and_run(agents)
+        agents = _build_agent_map()
+        state = _patch_and_run(agents, num_tasks=1)
 
         assert state["status"] == "completed"
         assert len(state["failed_task_ids"]) == 0
 
 
 # ---------------------------------------------------------------------------
-# Tests — plan failure
+# Tests — plan failure (Notion data issues)
 # ---------------------------------------------------------------------------
 
 class TestPlanFailure:
-    def test_plan_failure_aborts_immediately(self):
-        """Planner returns success=False → sprint aborted, no tasks processed."""
-        agents = _build_agent_map(plan_result=_make_plan_result(success=False))
-        state = _patch_and_run(agents)
+    def test_no_tasks_completes_with_no_work(self):
+        """Empty task list → sprint completed with no work done."""
+        agents = _build_agent_map()
+        state = _patch_and_run(agents, tasks=[])
 
-        assert state["status"] == "aborted"
+        assert state["status"] == "completed"
         assert len(state["task_results"]) == 0
-        assert any("SprintPlanner failed" in e for e in state["errors"])
+        assert len(state["failed_task_ids"]) == 0
 
-    def test_empty_plan_completes(self):
-        """Planner succeeds with 0 tasks → completed with no work done."""
-        agents = _build_agent_map(plan_result=_make_plan_result(num_tasks=0))
-        state = _patch_and_run(agents)
+    def test_empty_sprint_completes(self):
+        """Sprint has 0 work items → completed with no work done."""
+        agents = _build_agent_map()
+        state = _patch_and_run(agents, num_tasks=0)
 
         assert state["status"] == "completed"
         assert len(state["task_results"]) == 0
@@ -316,17 +359,16 @@ class TestTaskFailure:
             _make_coder_result(success=True),    # Task 3
         ]
         agents = _build_agent_map(
-            plan_result=_make_plan_result(num_tasks=3),
             coder_result=coder_results,
         )
-        state = _patch_and_run(agents)
+        state = _patch_and_run(agents, num_tasks=3)
 
         assert state["status"] == "completed"
-        assert "SP8-002" in state["failed_task_ids"]
+        assert "wi-2" in state["failed_task_ids"]
         assert len(state["failed_task_ids"]) == 1
         # Tasks 1 and 3 have updater results
-        assert "updater" in state["task_results"]["SP8-001"]
-        assert "updater" in state["task_results"]["SP8-003"]
+        assert "updater" in state["task_results"]["wi-1"]
+        assert "updater" in state["task_results"]["wi-3"]
 
     def test_abort_threshold_exceeded(self):
         """4 tasks, 3 coder failures → >50% → aborted."""
@@ -337,10 +379,9 @@ class TestTaskFailure:
             _make_coder_result(success=True),    # Task 4 (never reached)
         ]
         agents = _build_agent_map(
-            plan_result=_make_plan_result(num_tasks=4),
             coder_result=coder_results,
         )
-        state = _patch_and_run(agents)
+        state = _patch_and_run(agents, num_tasks=4)
 
         assert state["status"] == "aborted"
         assert len(state["failed_task_ids"]) >= 3
@@ -364,18 +405,17 @@ class TestOuterRetry:
             _make_tester_result(test_passed=True),
         ]
         agents = _build_agent_map(
-            plan_result=_make_plan_result(num_tasks=1),
             coder_result=coder_results,
             tester_result=tester_results,
         )
-        state = _patch_and_run(agents)
+        state = _patch_and_run(agents, num_tasks=1)
 
         assert state["status"] == "completed"
         assert len(state["failed_task_ids"]) == 0
         # Verify outer retry was tracked
-        assert state["iteration_counts"].get("outer_coder:SP8-001", 0) >= 1
+        assert state["iteration_counts"].get("outer_coder:wi-1", 0) >= 1
         # Updater should have run
-        assert "updater" in state["task_results"]["SP8-001"]
+        assert "updater" in state["task_results"]["wi-1"]
 
     def test_test_failure_exhausts_outer_retries(self):
         """Tests always fail → after MAX_OUTER_RETRIES, task marked failed."""
@@ -387,26 +427,24 @@ class TestOuterRetry:
             _make_tester_result(test_passed=False) for _ in range(num_coder_calls)
         ]
         agents = _build_agent_map(
-            plan_result=_make_plan_result(num_tasks=1),
             coder_result=coder_results,
             tester_result=tester_results,
         )
-        state = _patch_and_run(agents)
+        state = _patch_and_run(agents, num_tasks=1)
 
-        assert "SP8-001" in state["failed_task_ids"]
-        assert state["iteration_counts"].get("outer_coder:SP8-001", 0) == MAX_OUTER_RETRIES
+        assert "wi-1" in state["failed_task_ids"]
+        assert state["iteration_counts"].get("outer_coder:wi-1", 0) == MAX_OUTER_RETRIES
 
     def test_tester_infra_failure_skips_task(self):
         """TesterAgent success=False (infra error) → skip, no retry."""
         agents = _build_agent_map(
-            plan_result=_make_plan_result(num_tasks=1),
             tester_result=_make_tester_result(success=False),
         )
-        state = _patch_and_run(agents)
+        state = _patch_and_run(agents, num_tasks=1)
 
-        assert "SP8-001" in state["failed_task_ids"]
+        assert "wi-1" in state["failed_task_ids"]
         # No outer retries — infra failure goes straight to check
-        assert state["iteration_counts"].get("outer_coder:SP8-001", 0) == 0
+        assert state["iteration_counts"].get("outer_coder:wi-1", 0) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -438,12 +476,11 @@ class TestTestFeedback:
         ]
 
         agent_map = _build_agent_map(
-            plan_result=_make_plan_result(num_tasks=1),
             tester_result=tester_results,
         )
         agent_map["coder"] = coder_cls
 
-        state = _patch_and_run(agent_map)
+        state = _patch_and_run(agent_map, num_tasks=1)
 
         assert state["status"] == "completed"
         # Second coder call should have test_feedback
@@ -452,7 +489,6 @@ class TestTestFeedback:
         assert "test_feedback" in second_input
         assert "failed" in second_input["test_feedback"]
 
-
 # ---------------------------------------------------------------------------
 # Tests — dry-run mode
 # ---------------------------------------------------------------------------
@@ -460,8 +496,8 @@ class TestTestFeedback:
 class TestDryRun:
     def test_dry_run_completes(self):
         """Graph completes with dry_run=True."""
-        agents = _build_agent_map(plan_result=_make_plan_result(num_tasks=1))
-        state = _patch_and_run(agents, dry_run=True)
+        agents = _build_agent_map()
+        state = _patch_and_run(agents, dry_run=True, num_tasks=1)
 
         assert state["status"] == "completed"
         assert len(state["failed_task_ids"]) == 0
@@ -483,16 +519,16 @@ class TestRouting:
         assert route_after_plan(state) == END
 
     def test_route_after_plan_has_tasks(self):
-        state = {"status": "running", "tasks": [{"id": "SP8-001"}]}
+        state = {"status": "running", "tasks": [{"id": "wi-1"}]}
         assert route_after_plan(state) == "setup_task_node"
 
     def test_route_after_test_passed(self):
         state = {
-            "tasks": [{"id": "SP8-001"}],
+            "tasks": [{"id": "wi-1"}],
             "current_task_index": 0,
             "failed_task_ids": [],
             "task_results": {
-                "SP8-001": {
+                "wi-1": {
                     "tester": {
                         "success": True,
                         "partial_output": {"test_passed": True},
@@ -505,11 +541,11 @@ class TestRouting:
 
     def test_route_after_test_failed_with_retries(self):
         state = {
-            "tasks": [{"id": "SP8-001"}],
+            "tasks": [{"id": "wi-1"}],
             "current_task_index": 0,
             "failed_task_ids": [],
             "task_results": {
-                "SP8-001": {
+                "wi-1": {
                     "tester": {
                         "success": True,
                         "partial_output": {"test_passed": False},
@@ -522,18 +558,18 @@ class TestRouting:
 
     def test_route_after_test_failed_no_retries(self):
         state = {
-            "tasks": [{"id": "SP8-001"}],
+            "tasks": [{"id": "wi-1"}],
             "current_task_index": 0,
             "failed_task_ids": [],
             "task_results": {
-                "SP8-001": {
+                "wi-1": {
                     "tester": {
                         "success": True,
                         "partial_output": {"test_passed": False},
                     }
                 }
             },
-            "iteration_counts": {"outer_coder:SP8-001": MAX_OUTER_RETRIES},
+            "iteration_counts": {"outer_coder:wi-1": MAX_OUTER_RETRIES},
         }
         assert route_after_test(state) == "check_node"
 
@@ -566,17 +602,17 @@ class TestEscalation:
         }
         output = CascadeRunner.format_escalation(
             agent_name="coder",
-            task_id="SP8-001",
+            task_id="wi-1",
             task_title="Add error handling",
             result=result,
             iteration=3,
             max_iterations=5,
         )
-        assert "ESCALATION: coder failed on SP8-001" in output
+        assert "ESCALATION: coder failed on wi-1" in output
         assert "Error type:  tool" in output
         assert "Message:     Aider timed out" in output
         assert "Iteration:   3 / 5" in output
-        assert "SP8-001 - Add error handling" in output
+        assert "wi-1 - Add error handling" in output
         assert "Partial Output" in output
         assert "Suggested Actions" in output
 
@@ -588,6 +624,6 @@ class TestEscalation:
             "partial_output": {"data": "x" * 5000},
         }
         output = CascadeRunner.format_escalation(
-            "coder", "SP8-001", "Task", result, 1, 5,
+            "coder", "wi-1", "Task", result, 1, 5,
         )
         assert "truncated" in output
