@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     aider_model: str | None = None                  # Full provider-prefixed model (e.g. "ollama/qwen2.5-coder:7b"); auto-derived from ollama_model if None
     aider_timeout: int = 120                        # Subprocess timeout in seconds
     aider_repo_dir: str | None = None               # Path to target repo for Aider edits
+    aider_edit_format: str = "udiff"                  # Aider edit format: "udiff" (best for 7b/14b), "diff", "whole"
 
     # -- TesterAgent (Phase 3e) --
     test_command: str = "pytest"                     # Test command to run

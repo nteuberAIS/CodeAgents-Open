@@ -18,7 +18,7 @@ from schemas.git_models import GitCommandResult
 TASK_INPUT = json.dumps({
     "task_id": "SP8-001",
     "task_title": "Add error handling",
-    "source_branch": "sprint-8/SP8-001",
+    "source_branch": "task/sprint-8/SP8-001",
     "target_branch": "sprint-8",
     "notion_id": "wi-001",
     "test_summary": "5 passed, 0 failed",
@@ -29,7 +29,7 @@ TASK_INPUT = json.dumps({
 TASK_INPUT_NO_NOTION = json.dumps({
     "task_id": "SP8-002",
     "task_title": "Fix tests",
-    "source_branch": "sprint-8/SP8-002",
+    "source_branch": "task/sprint-8/SP8-002",
     "target_branch": "sprint-8",
 })
 

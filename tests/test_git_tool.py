@@ -126,7 +126,7 @@ class TestBaseGitTool:
 
     def test_task_branch_name(self):
         tool = GitHubTool(_make_settings(), dry_run=True)
-        assert tool.task_branch_name(8, "SP8-001") == "sprint-8/SP8-001"
+        assert tool.task_branch_name(8, "SP8-001") == "task/sprint-8/SP8-001"
 
     def test_sprint_branch_name(self):
         tool = GitHubTool(_make_settings(), dry_run=True)
@@ -203,9 +203,9 @@ class TestBaseGitTool:
 
     def test_create_branch_dry_run(self):
         tool = GitHubTool(_make_settings(), dry_run=True)
-        result = tool.create_branch("sprint-8/SP8-001", "main")
+        result = tool.create_branch("task/sprint-8/SP8-001", "main")
         assert result.dry_run is True
-        assert "checkout -b sprint-8/SP8-001 main" in result.command
+        assert "checkout -b task/sprint-8/SP8-001 main" in result.command
 
     def test_checkout_branch_dry_run(self):
         tool = GitHubTool(_make_settings(), dry_run=True)
@@ -226,9 +226,9 @@ class TestBaseGitTool:
 
     def test_push_dry_run(self):
         tool = GitHubTool(_make_settings(), dry_run=True)
-        result = tool.push("sprint-8/SP8-001")
+        result = tool.push("task/sprint-8/SP8-001")
         assert result.dry_run is True
-        assert "push -u origin sprint-8/SP8-001" in result.command
+        assert "push -u origin task/sprint-8/SP8-001" in result.command
 
     def test_push_dry_run_no_branch(self):
         tool = GitHubTool(_make_settings(), dry_run=True)
@@ -295,7 +295,7 @@ class TestGitHubToolOperations:
     @patch("tools.git_tool.subprocess.run")
     def test_list_branches_with_pattern(self, mock_run):
         mock_run.return_value = _mock_subprocess_result(
-            stdout="* main\n  sprint-8/SP8-001\n  sprint-8/SP8-002\n"
+            stdout="* main\n  task/sprint-8/SP8-001\n  task/sprint-8/SP8-002\n"
         )
         tool = GitHubTool(_make_settings(), dry_run=True)
         branches = tool.list_branches(pattern="sprint-8")
@@ -393,7 +393,7 @@ class TestGitHubToolOperations:
         pr_json = json.dumps({
             "number": 42,
             "title": "Fix",
-            "headRefName": "sprint-8/SP8-001",
+            "headRefName": "task/sprint-8/SP8-001",
             "baseRefName": "sprint-8",
             "state": "OPEN",
             "url": "https://github.com/org/repo/pull/42",
@@ -450,7 +450,8 @@ class TestAzDevOpsToolInit:
             )
 
     @patch("tools.git_tool.subprocess.run")
-    def test_validates_az_auth(self, mock_run):
+    @patch("tools.azdevops_tool.shutil.which", return_value="az")
+    def test_validates_az_auth(self, mock_which, mock_run):
         mock_run.return_value = _mock_subprocess_result(returncode=0)
         tool = AzDevOpsTool(_make_settings(), dry_run=False)
         assert tool.provider == "azdevops"
@@ -553,7 +554,7 @@ class TestAzDevOpsToolOperations:
         az_json = json.dumps({
             "pullRequestId": 101,
             "title": "Task",
-            "sourceRefName": "refs/heads/sprint-8/SP8-001",
+            "sourceRefName": "refs/heads/task/sprint-8/SP8-001",
             "targetRefName": "refs/heads/sprint-8",
             "status": "active",
         })

@@ -74,7 +74,7 @@ def _make_mock_git_tool(dry_run: bool = False):
     """Mock GitHubTool that returns success results."""
     tool = MagicMock()
     tool.sprint_branch_name.side_effect = lambda n: f"sprint-{n}"
-    tool.task_branch_name.side_effect = lambda n, t: f"sprint-{n}/{t}"
+    tool.task_branch_name.side_effect = lambda n, t: f"task/sprint-{n}/{t}"
 
     def create_branch(name, from_ref="main"):
         result = MagicMock()
@@ -125,8 +125,8 @@ class TestExecutePlan:
         assert len(execution["branches_created"]) == 3
         assert execution["branches_created"][0]["branch"] == "sprint-8"
         assert execution["branches_created"][0]["task_id"] is None
-        assert execution["branches_created"][1]["branch"] == "sprint-8/SP8-001"
-        assert execution["branches_created"][2]["branch"] == "sprint-8/SP8-002"
+        assert execution["branches_created"][1]["branch"] == "task/sprint-8/SP8-001"
+        assert execution["branches_created"][2]["branch"] == "task/sprint-8/SP8-002"
 
     def test_captures_notion_errors_without_raising(self):
         notion_write = MagicMock()

@@ -46,6 +46,12 @@ class AiderTool:
             ollama_model = getattr(settings, "ollama_model", "qwen2.5-coder:7b")
             self.model = f"ollama/{ollama_model}"
 
+        # Edit format: "udiff" works best with smaller models (7b/14b)
+        # that naturally produce unified-diff output
+        self.edit_format: str | None = getattr(
+            settings, "aider_edit_format", "udiff"
+        )
+
         self._validate_cli()
 
     def _validate_cli(self) -> None:
@@ -90,7 +96,13 @@ class AiderTool:
             "--no-auto-commits",
             "--no-pretty",
             "--no-stream",
+            "--no-show-model-warnings",
+            "--no-detect-urls",
+            "--map-tokens", "1024",
+            "--no-gitignore",
         ]
+        if self.edit_format:
+            cmd.extend(["--edit-format", self.edit_format])
         for f in files:
             cmd.extend(["--file", f])
         if read_files:
