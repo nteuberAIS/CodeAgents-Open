@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from notion_client import Client
-from notion_client.errors import APIResponseError
+from notion_client.errors import APIResponseError, RequestTimeoutError
 
 from schemas.notion_models import (
     Decision,
@@ -128,8 +128,8 @@ class NotionTool:
 
                 try:
                     blocks = self._fetch_page_blocks(item.notion_id)
-                except APIResponseError:
-                    logger.warning("Failed to fetch blocks for %s", item.notion_id)
+                except (APIResponseError, RequestTimeoutError) as exc:
+                    logger.warning("Failed to fetch blocks for %s: %s", item.notion_id, exc)
                     blocks = []
 
                 markdown = render_blocks(blocks)
@@ -162,8 +162,8 @@ class NotionTool:
                 seen_ids.add(sub_id)
                 try:
                     blocks = self._fetch_page_blocks(sub_id)
-                except APIResponseError:
-                    logger.warning("Failed to fetch sub-page blocks for %s", sub_id)
+                except (APIResponseError, RequestTimeoutError) as exc:
+                    logger.warning("Failed to fetch sub-page blocks for %s: %s", sub_id, exc)
                     blocks = []
 
                 markdown = render_blocks(blocks)
@@ -188,8 +188,8 @@ class NotionTool:
             for tmpl in all_templates:
                 try:
                     blocks = self._fetch_page_blocks(tmpl.notion_id)
-                except APIResponseError:
-                    logger.warning("Failed to fetch template blocks for %s", tmpl.notion_id)
+                except (APIResponseError, RequestTimeoutError) as exc:
+                    logger.warning("Failed to fetch template blocks for %s: %s", tmpl.notion_id, exc)
                     blocks = []
 
                 markdown = render_blocks(blocks)
@@ -390,9 +390,13 @@ class NotionTool:
             if block.get("has_children") and block.get("type") not in (
                 "child_page", "child_database",
             ):
-                block["children"] = self._fetch_page_blocks(
-                    block["id"], depth + 1, max_depth, seen,
-                )
+                try:
+                    block["children"] = self._fetch_page_blocks(
+                        block["id"], depth + 1, max_depth, seen,
+                    )
+                except (APIResponseError, RequestTimeoutError) as exc:
+                    logger.warning("Timeout fetching child blocks of %s: %s", block["id"], exc)
+                    block["children"] = []
 
         return blocks
 

@@ -65,6 +65,79 @@ def _snapshot_to_context(snapshot) -> dict:
     }
 
 
+def _load_cascade_tasks(settings, sprint_id: str) -> tuple[list[dict] | None, dict | None]:
+    """Load tasks for a cascade run from local Notion snapshot.
+
+    Matches the CLI sprint_id to a sprint in local data, filters work items,
+    and enriches task descriptions with page content from disk.
+
+    Returns:
+        (tasks, sprint) if sprint found, (None, None) otherwise.
+    """
+    context = _load_notion_context(settings)
+    if not context:
+        return None, None
+
+    # Strip prefix to get version string: "s-1.4" -> "1.4", "sprint-8" -> "8"
+    version = sprint_id
+    for prefix in ("s-", "sprint-"):
+        if version.startswith(prefix):
+            version = version[len(prefix):]
+            break
+
+    # Match sprint by name or notion_id
+    sprints = context.get("sprints", [])
+    sprint = None
+    for s in sprints:
+        name = s.get("name", "")
+        if f" {version}" in name or name.startswith(version):
+            sprint = s
+            break
+    if sprint is None:
+        for s in sprints:
+            if s.get("notion_id") == sprint_id:
+                sprint = s
+                break
+    if sprint is None:
+        return None, None
+
+    # Filter work items linked to this sprint
+    sprint_notion_id = sprint["notion_id"]
+    work_items = [
+        wi for wi in context.get("work_items", [])
+        if wi.get("sprint_id") == sprint_notion_id
+    ]
+
+    # Build task dicts
+    content_dir = Path(settings.data_dir) / "notion" / "content"
+    tasks = []
+    for wi in work_items:
+        notion_id = wi["notion_id"]
+        description = wi.get("definition_of_done") or ""
+
+        # Enrich description with page content from disk
+        content_path = content_dir / f"{notion_id}.md"
+        if content_path.exists():
+            page_content = content_path.read_text(encoding="utf-8").strip()
+            if page_content:
+                description = f"{description}\n\n{page_content}" if description else page_content
+        else:
+            print(f"[Cascade] Warning: no page content for task {notion_id} ({wi.get('name', 'Untitled')})")
+
+        tasks.append({
+            "id": notion_id,
+            "notion_id": notion_id,
+            "title": wi.get("name", "Untitled"),
+            "description": description,
+            "status": wi.get("status", "Ready"),
+            "priority": wi.get("priority", ""),
+            "estimate_hrs": wi.get("estimate_hrs", 0),
+            "type": wi.get("type", "Task"),
+        })
+
+    return tasks, sprint
+
+
 def _get_agent_tools(agent) -> list[str]:
     """Get the list of tools an agent wants.
 
@@ -284,21 +357,41 @@ def cmd_cascade(args) -> None:
     # Derive sprint_id
     sprint_id = args.sprint_id or f"sprint-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
-    if args.dry_run:
-        print(f"[Cascade] Dry run — would run cascade for '{sprint_id}'")
-        print(f"[Cascade] Goal: {args.prompt}")
-        print(f"[Cascade] Abort threshold: {args.abort_threshold}")
-        if args.max_tasks:
-            print(f"[Cascade] Max tasks: {args.max_tasks}")
-        return
+    # Load tasks from local Notion data
+    tasks, sprint = _load_cascade_tasks(settings, sprint_id)
+    if tasks is None:
+        # Try to list available sprints for a helpful error
+        context = _load_notion_context(settings)
+        available = []
+        if context:
+            available = [s.get("name", "?") for s in context.get("sprints", [])]
+        print(f"[Cascade] Sprint '{sprint_id}' not found in local Notion data.")
+        print("[Cascade] Run 'python main.py sync' first, then check the sprint ID.")
+        if available:
+            print(f"[Cascade] Available sprints: {available}")
+        sys.exit(1)
 
-    runner = CascadeRunner(settings, dry_run=False)
+    if not tasks:
+        sprint_name = sprint.get("name", sprint_id) if sprint else sprint_id
+        print(f"[Cascade] Sprint '{sprint_name}' found but has 0 work items assigned.")
+        print("[Cascade] Check Notion: work items may not be linked to this sprint yet.")
+        print("[Cascade] Then run 'python main.py sync' to refresh local data.")
+        sys.exit(1)
+
+    # Combine sprint goal with CLI prompt
+    sprint_goal = sprint.get("goal", "") if sprint else ""
+    goal = args.prompt
+    if sprint_goal and sprint_goal not in goal:
+        goal = f"{goal}\n\nSprint goal: {sprint_goal}"
+
+    runner = CascadeRunner(settings, dry_run=args.dry_run)
     max_tasks = args.max_tasks or 0
     final_state = runner.run(
         sprint_id=sprint_id,
-        goal=args.prompt,
+        goal=goal,
         abort_threshold=args.abort_threshold,
         max_tasks=max_tasks,
+        tasks=tasks,
     )
 
     # Save final state

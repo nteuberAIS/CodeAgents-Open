@@ -36,6 +36,7 @@ class CascadeRunner:
         goal: str = "",
         abort_threshold: float = 0.5,
         max_tasks: int = 0,
+        tasks: list[dict] | None = None,
     ) -> SprintState:
         """Execute the full cascade and return the final state.
 
@@ -44,6 +45,7 @@ class CascadeRunner:
             goal: Sprint goal passed to SprintPlannerAgent.
             abort_threshold: Fraction of tasks that can fail before aborting.
             max_tasks: Limit tasks processed (0 = no limit).
+            tasks: Pre-loaded task dicts from the CLI layer.
 
         Returns:
             The final SprintState after all nodes have executed.
@@ -51,7 +53,7 @@ class CascadeRunner:
         initial_state: SprintState = {
             "sprint_id": sprint_id,
             "plan": {"goal": goal},
-            "tasks": [],
+            "tasks": tasks or [],
             "current_task_index": 0,
             "task_results": {},
             "errors": [],
@@ -64,7 +66,7 @@ class CascadeRunner:
 
         final_state = self.graph.invoke(
             initial_state,
-            config={"recursion_limit": 100},
+            config={"recursion_limit": 200},
         )
         self.print_summary(final_state)
         return final_state
@@ -118,15 +120,15 @@ class CascadeRunner:
             if "updater" in r and tid not in failed
         )
 
-        logger.info("=" * 50)
-        logger.info("CASCADE SUMMARY")
-        logger.info("=" * 50)
-        logger.info("Sprint:    %s", state.get("sprint_id", "?"))
-        logger.info("Status:    %s", status)
-        logger.info("Tasks:     %d total, %d completed, %d failed", total, completed, len(failed))
+        print("=" * 50)
+        print("CASCADE SUMMARY")
+        print("=" * 50)
+        print(f"Sprint:    {state.get('sprint_id', '?')}")
+        print(f"Status:    {status}")
+        print(f"Tasks:     {total} total, {completed} completed, {len(failed)} failed")
 
         if failed:
-            logger.info("Failed:    %s", ", ".join(failed))
+            print(f"Failed:    {', '.join(failed)}")
 
         # Count PRs created
         pr_count = sum(
@@ -134,11 +136,11 @@ class CascadeRunner:
             if r.get("updater", {}).get("partial_output", {}).get("pr_created", False)
         )
         if pr_count:
-            logger.info("PRs:       %d created", pr_count)
+            print(f"PRs:       {pr_count} created")
 
         if errors:
-            logger.info("Errors:")
+            print("Errors:")
             for err in errors:
-                logger.info("  - %s", err)
+                print(f"  - {err}")
 
-        logger.info("=" * 50)
+        print("=" * 50)

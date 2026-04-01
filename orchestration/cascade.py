@@ -18,7 +18,7 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
-from config.settings import get_llm, resolve_agent_class, resolve_tool_class
+from config.settings import get_llm, get_settings, resolve_agent_class, resolve_tool_class
 from schemas.sprint_state import (
     SprintState,
     advance_task,
@@ -36,47 +36,67 @@ logger = logging.getLogger(__name__)
 MAX_OUTER_RETRIES = 2
 
 
+def _sprint_branch_prefix(sprint_id: str) -> str:
+    """Convert CLI sprint_id to branch prefix.
+
+    Examples: 's-1.4' -> '1.4', 'sprint-8' -> '8', 'sprint-20260401' -> '20260401'
+    """
+    sid = sprint_id
+    for prefix in ("s-", "sprint-"):
+        if sid.startswith(prefix):
+            sid = sid[len(prefix):]
+            break
+    return sid
+
+
 # ---------------------------------------------------------------------------
 # Node functions
 # ---------------------------------------------------------------------------
 
 def plan_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
-    """Run SprintPlannerAgent and seed the cascade state."""
-    agent_cls = resolve_agent_class("sprint_planner", settings)
-    llm = get_llm(settings, agent_name="sprint_planner")
-    agent = agent_cls(llm=llm)
-    tool_names = getattr(agent_cls, "REQUIRED_TOOLS", []) + getattr(agent_cls, "OPTIONAL_TOOLS", [])
-    if tool_names:
-        agent.bind_tools(tool_names, settings, dry_run=dry_run)
+    """Validate pre-loaded tasks and seed the cascade state.
 
-    goal = state.get("plan", {}).get("goal", "")
-    prompt = goal or f"Plan sprint {state['sprint_id']}"
-    result = agent.run(prompt)
+    Tasks are loaded by the CLI layer (main.py) and passed via initial state.
+    This node validates the input, applies max_tasks truncation, and builds
+    the plan dict for downstream nodes.
+    """
+    sprint_id = state["sprint_id"]
+    tasks = state.get("tasks", [])
+    print(f"[cascade] plan: {len(tasks)} tasks for sprint {sprint_id}")
 
-    if not result.get("success"):
-        error_msg = f"SprintPlanner failed: {result.get('error_message', 'unknown error')}"
-        logger.error(error_msg)
+    if not tasks:
         return {
-            "status": "aborted",
-            "plan": result.get("partial_output", {}),
-            "errors": [error_msg],
+            "status": "completed",
+            "plan": {"sprint": sprint_id, "goal": state.get("plan", {}).get("goal", ""), "tasks": []},
+            "tasks": [],
+            "current_task_index": 0,
+            "task_results": {},
+            "iteration_counts": {},
+            "errors": [],
             "failed_task_ids": [],
         }
 
-    plan_output = result["partial_output"]
+    # Truncate if max_tasks is set
+    max_tasks = state.get("max_tasks", 0)
+    if max_tasks > 0:
+        tasks = tasks[:max_tasks]
+
+    plan_output = {
+        "sprint": sprint_id,
+        "goal": state.get("plan", {}).get("goal", ""),
+        "tasks": tasks,
+        "dependencies": [],
+    }
+
     new_state = create_initial_state(
         plan_output,
-        state["sprint_id"],
+        sprint_id,
         state.get("abort_threshold", 0.5),
     )
-    # Truncate tasks if max_tasks is set
-    max_tasks = state.get("max_tasks", 0)
     if max_tasks > 0:
         new_state["tasks"] = new_state["tasks"][:max_tasks]
 
-    # If the plan produced no tasks, mark completed immediately
     status = "completed" if not new_state["tasks"] else new_state["status"]
-    # Return fields for LangGraph to merge.  Reducer fields must be fresh lists.
     return {
         "plan": new_state["plan"],
         "tasks": new_state["tasks"],
@@ -95,15 +115,16 @@ def setup_task_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict
     if task is None:
         return {"errors": [], "failed_task_ids": []}
 
-    sprint_number = state.get("plan", {}).get("sprint", 0)
+    sprint_prefix = _sprint_branch_prefix(state["sprint_id"])
     task_id = task["id"]
+    print(f"[cascade] setup: preparing branch for {task_id} — {task.get('title', '')}")
 
     # Try to create and checkout a task branch (non-fatal on failure)
     for provider in ("github", "azdevops"):
         try:
             tool_cls = resolve_tool_class(provider, settings)
             git_tool = tool_cls(settings=settings, dry_run=dry_run)
-            branch_name = git_tool.task_branch_name(sprint_number, task_id)
+            branch_name = git_tool.task_branch_name(sprint_prefix, task_id)
             create_result = git_tool.create_branch(branch_name, from_ref="main")
             if not create_result.success and not create_result.dry_run:
                 # Branch might already exist — try checkout
@@ -125,10 +146,13 @@ def code_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
         return {"errors": [], "failed_task_ids": []}
 
     task_id = task["id"]
+    print(f"[cascade] code: running CoderAgent on {task_id} — {task.get('title', '')}")
 
-    # Detect outer retry: if tester results already exist for this task
+    # Build task input
     task_input = dict(task)
     existing_results = state.get("task_results", {}).get(task_id, {})
+
+    # Detect outer retry: if tester results already exist for this task
     tester_result = existing_results.get("tester")
     updated_counts = dict(state.get("iteration_counts", {}))
 
@@ -180,6 +204,7 @@ def test_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
         return {"errors": [], "failed_task_ids": []}
 
     task_id = task["id"]
+    print(f"[cascade] test: running TesterAgent on {task_id}")
     test_input = {
         "task_id": task_id,
         "task_title": task.get("title", ""),
@@ -224,7 +249,8 @@ def update_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
         return {"errors": [], "failed_task_ids": []}
 
     task_id = task["id"]
-    sprint_number = state.get("plan", {}).get("sprint", 0)
+    sprint_prefix = _sprint_branch_prefix(state["sprint_id"])
+    print(f"[cascade] update: creating PR for {task_id} — {task.get('title', '')}")
 
     # Build updater input from task + accumulated results
     coder_result = state.get("task_results", {}).get(task_id, {}).get("coder", {})
@@ -234,8 +260,8 @@ def update_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
         "task_id": task_id,
         "task_title": task.get("title", ""),
         "task_description": task.get("description", ""),
-        "source_branch": f"sprint-{sprint_number}/{task_id}",
-        "target_branch": f"sprint-{sprint_number}",
+        "source_branch": f"sprint-{sprint_prefix}/{task_id}",
+        "target_branch": f"sprint-{sprint_prefix}",
         "modified_files": coder_result.get("partial_output", {}).get("modified_files", []),
     }
 
@@ -285,6 +311,8 @@ def update_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
 def check_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
     """Advance to next task, check abort threshold, update status."""
     task = get_current_task(state)
+    if task:
+        print(f"[cascade] check: task {task['id']} done, advancing")
     new_errors: list[str] = []
     new_failed: list[str] = []
 

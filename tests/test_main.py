@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from main import _get_agent_tools, _load_notion_context, _snapshot_to_context, cmd_cascade
+from main import _get_agent_tools, _load_cascade_tasks, _load_notion_context, _snapshot_to_context, cmd_cascade
 
 
 # -- Helpers --
@@ -264,6 +264,29 @@ class TestGetLlmModelOverrides:
 # -- Tests for cmd_cascade --
 
 
+def _make_cascade_tasks(n: int = 2) -> tuple[list[dict], dict]:
+    """Create test tasks and sprint for _load_cascade_tasks mocking."""
+    sprint = {
+        "notion_id": "test-sprint-id",
+        "name": "Sprint 8",
+        "goal": "Test sprint goal",
+    }
+    tasks = [
+        {
+            "id": f"T{i}",
+            "notion_id": f"T{i}",
+            "title": f"Task {i}",
+            "description": "",
+            "status": "Ready",
+            "priority": "P1",
+            "estimate_hrs": 2,
+            "type": "Task",
+        }
+        for i in range(1, n + 1)
+    ]
+    return tasks, sprint
+
+
 def _cascade_args(**overrides) -> Namespace:
     """Create a Namespace mimicking parsed cascade CLI args."""
     defaults = {
@@ -284,13 +307,17 @@ def _cascade_args(**overrides) -> Namespace:
 class TestCmdCascade:
     """Tests for cmd_cascade()."""
 
+    @patch("main._load_cascade_tasks")
     @patch("orchestration.CascadeRunner")
     @patch("main.get_settings")
-    def test_happy_path(self, mock_get_settings, mock_runner_cls, tmp_path):
+    def test_happy_path(self, mock_get_settings, mock_runner_cls, mock_load_tasks, tmp_path):
         """CascadeRunner is called and state is saved."""
         settings = _make_settings()
         settings.data_dir = str(tmp_path)
         mock_get_settings.return_value = settings
+
+        tasks, sprint = _make_cascade_tasks(1)
+        mock_load_tasks.return_value = (tasks, sprint)
 
         final_state = {
             "sprint_id": "sprint-8",
@@ -312,24 +339,27 @@ class TestCmdCascade:
         args = _cascade_args(sprint_id="sprint-8")
         cmd_cascade(args)
 
-        runner.run.assert_called_once_with(
-            sprint_id="sprint-8",
-            goal="Deploy SHIR and bronze layer",
-            abort_threshold=0.5,
-            max_tasks=0,
-        )
+        call_kwargs = runner.run.call_args[1]
+        assert call_kwargs["sprint_id"] == "sprint-8"
+        assert call_kwargs["abort_threshold"] == 0.5
+        assert call_kwargs["max_tasks"] == 0
+        assert call_kwargs["tasks"] == tasks
         state_path = tmp_path / "cascade" / "sprint-8.json"
         assert state_path.exists()
         saved = json.loads(state_path.read_text())
         assert saved["status"] == "completed"
 
+    @patch("main._load_cascade_tasks")
     @patch("orchestration.CascadeRunner")
     @patch("main.get_settings")
-    def test_max_tasks_passed(self, mock_get_settings, mock_runner_cls, tmp_path):
+    def test_max_tasks_passed(self, mock_get_settings, mock_runner_cls, mock_load_tasks, tmp_path):
         """--max-tasks is forwarded to runner."""
         settings = _make_settings()
         settings.data_dir = str(tmp_path)
         mock_get_settings.return_value = settings
+
+        tasks, sprint = _make_cascade_tasks(2)
+        mock_load_tasks.return_value = (tasks, sprint)
 
         runner = MagicMock()
         runner.run.return_value = {"sprint_id": "s1", "status": "completed",
@@ -343,25 +373,37 @@ class TestCmdCascade:
         args = _cascade_args(sprint_id="s1", max_tasks=2)
         cmd_cascade(args)
 
-        runner.run.assert_called_once_with(
-            sprint_id="s1",
-            goal="Deploy SHIR and bronze layer",
-            abort_threshold=0.5,
-            max_tasks=2,
-        )
+        call_kwargs = runner.run.call_args[1]
+        assert call_kwargs["sprint_id"] == "s1"
+        assert call_kwargs["max_tasks"] == 2
+        assert call_kwargs["tasks"] == tasks
 
+    @patch("main._load_cascade_tasks")
+    @patch("orchestration.CascadeRunner")
     @patch("main.get_settings")
-    def test_dry_run(self, mock_get_settings, capsys):
-        """--dry-run prints info without executing."""
+    def test_dry_run(self, mock_get_settings, mock_runner_cls, mock_load_tasks, tmp_path):
+        """--dry-run runs the cascade with dry_run=True."""
         settings = _make_settings()
+        settings.data_dir = str(tmp_path)
         mock_get_settings.return_value = settings
+
+        tasks, sprint = _make_cascade_tasks(1)
+        mock_load_tasks.return_value = (tasks, sprint)
+
+        runner = MagicMock()
+        runner.run.return_value = {"sprint_id": "sprint-9", "status": "completed",
+                                    "tasks": [], "failed_task_ids": [], "errors": [],
+                                    "task_results": {}, "plan": {},
+                                    "current_task_index": 0,
+                                    "iteration_counts": {},
+                                    "abort_threshold": 0.5, "max_tasks": 0}
+        mock_runner_cls.return_value = runner
 
         args = _cascade_args(dry_run=True, sprint_id="sprint-9")
         cmd_cascade(args)
 
-        output = capsys.readouterr().out
-        assert "Dry run" in output
-        assert "sprint-9" in output
+        # Verify CascadeRunner was created with dry_run=True
+        mock_runner_cls.assert_called_once_with(settings, dry_run=True)
 
     @patch("main.get_settings")
     def test_list_empty(self, mock_get_settings, tmp_path, capsys):
@@ -425,14 +467,18 @@ class TestCmdCascade:
         with pytest.raises(SystemExit):
             cmd_cascade(args)
 
+    @patch("main._load_cascade_tasks")
     @patch("main.resolve_tool_class")
     @patch("orchestration.CascadeRunner")
     @patch("main.get_settings")
-    def test_sync_flag(self, mock_get_settings, mock_runner_cls, mock_resolve, tmp_path):
+    def test_sync_flag(self, mock_get_settings, mock_runner_cls, mock_resolve, mock_load_tasks, tmp_path):
         """--sync calls Notion sync before cascade."""
         settings = _make_settings()
         settings.data_dir = str(tmp_path)
         mock_get_settings.return_value = settings
+
+        tasks, sprint = _make_cascade_tasks(1)
+        mock_load_tasks.return_value = (tasks, sprint)
 
         tool = MagicMock()
         tool.sync.return_value = MagicMock(counts={"work_items": 5})
@@ -454,13 +500,17 @@ class TestCmdCascade:
         tool.sync.assert_called_once()
         runner.run.assert_called_once()
 
+    @patch("main._load_cascade_tasks")
     @patch("orchestration.CascadeRunner")
     @patch("main.get_settings")
-    def test_default_sprint_id(self, mock_get_settings, mock_runner_cls, tmp_path):
+    def test_default_sprint_id(self, mock_get_settings, mock_runner_cls, mock_load_tasks, tmp_path):
         """Sprint ID defaults to timestamp-based format when not provided."""
         settings = _make_settings()
         settings.data_dir = str(tmp_path)
         mock_get_settings.return_value = settings
+
+        tasks, sprint = _make_cascade_tasks(1)
+        mock_load_tasks.return_value = (tasks, sprint)
 
         runner = MagicMock()
         runner.run.return_value = {"sprint_id": "auto", "status": "completed",
@@ -487,14 +537,18 @@ class TestCmdCascade:
         with pytest.raises(SystemExit):
             cmd_cascade(args)
 
+    @patch("main._load_cascade_tasks")
     @patch("orchestration.CascadeRunner")
     @patch("main.get_settings")
-    def test_model_override(self, mock_get_settings, mock_runner_cls, tmp_path):
+    def test_model_override(self, mock_get_settings, mock_runner_cls, mock_load_tasks, tmp_path):
         """--model overrides the Ollama model in settings."""
         settings = _make_settings()
         settings.data_dir = str(tmp_path)
         settings.ollama_model = "qwen2.5-coder:7b"
         mock_get_settings.return_value = settings
+
+        tasks, sprint = _make_cascade_tasks(1)
+        mock_load_tasks.return_value = (tasks, sprint)
 
         runner = MagicMock()
         runner.run.return_value = {"sprint_id": "s1", "status": "completed",
