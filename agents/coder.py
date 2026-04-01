@@ -135,7 +135,7 @@ class CoderAgent(BaseAgent):
                     partial_output={
                         "instruction": instruction,
                         "modified_files": result.modified_files,
-                        "aider_output": self._truncate(result.output, 2000),
+                        "aider_output": self._truncate(result.output, 4000),
                         "iterations_used": iteration,
                         "dry_run": result.dry_run,
                     },

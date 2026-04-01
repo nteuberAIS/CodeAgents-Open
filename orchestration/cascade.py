@@ -1,7 +1,7 @@
 """LangGraph StateGraph definition for the sprint cascade.
 
 The cascade processes tasks sequentially:
-    plan_node → (for each task) setup → code → test → update → check → next
+    plan_node → (for each task) setup → code → commit_push → test → update → check → next
 
 Two reflection layers:
     Inner  — CoderAgent retries Aider internally (up to MAX_ITERATIONS=5).
@@ -197,6 +197,88 @@ def code_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
     }
 
 
+def commit_push_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
+    """Commit Aider's file changes and push the task branch to the remote."""
+    task = get_current_task(state)
+    if task is None:
+        return {"errors": [], "failed_task_ids": []}
+
+    task_id = task["id"]
+    task_title = task.get("title", "")
+    sprint_prefix = _sprint_branch_prefix(state["sprint_id"])
+
+    # Get modified files from coder result
+    coder_result = state.get("task_results", {}).get(task_id, {}).get("coder", {})
+    modified_files = coder_result.get("partial_output", {}).get("modified_files", [])
+
+    # Resolve a git tool (same pattern as setup_task_node)
+    git_tool = None
+    for provider in ("azdevops", "github"):
+        try:
+            tool_cls = resolve_tool_class(provider, settings)
+            git_tool = tool_cls(settings=settings, dry_run=dry_run)
+            break
+        except Exception:  # noqa: BLE001
+            continue
+
+    if git_tool is None:
+        logger.warning("No git provider available — skipping commit+push")
+        return {"errors": [], "failed_task_ids": []}
+
+    # Commit
+    message = f"[cascade] {task_id}: {task_title}"
+    try:
+        if modified_files:
+            commit_result = git_tool.commit(message, modified_files)
+        else:
+            commit_result = git_tool.commit(message)
+
+        if not commit_result.success and not commit_result.dry_run:
+            logger.warning("Commit failed for %s: %s", task_id, commit_result.error)
+            # Record error but don't fail the task
+            updated_results = dict(state.get("task_results", {}))
+            task_entry = dict(updated_results.get(task_id, {}))
+            task_entry["commit_push"] = {"error": commit_result.error, "committed": False, "pushed": False}
+            updated_results[task_id] = task_entry
+            return {"task_results": updated_results, "errors": [], "failed_task_ids": []}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Commit exception for %s: %s", task_id, exc)
+        updated_results = dict(state.get("task_results", {}))
+        task_entry = dict(updated_results.get(task_id, {}))
+        task_entry["commit_push"] = {"error": str(exc), "committed": False, "pushed": False}
+        updated_results[task_id] = task_entry
+        return {"task_results": updated_results, "errors": [], "failed_task_ids": []}
+
+    # Push
+    branch_name = git_tool.task_branch_name(sprint_prefix, task_id)
+    try:
+        push_result = git_tool.push(branch_name)
+        if not push_result.success and not push_result.dry_run:
+            logger.warning("Push failed for %s: %s", task_id, push_result.error)
+            updated_results = dict(state.get("task_results", {}))
+            task_entry = dict(updated_results.get(task_id, {}))
+            task_entry["commit_push"] = {"error": push_result.error, "committed": True, "pushed": False}
+            updated_results[task_id] = task_entry
+            return {"task_results": updated_results, "errors": [], "failed_task_ids": []}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Push exception for %s: %s", task_id, exc)
+        updated_results = dict(state.get("task_results", {}))
+        task_entry = dict(updated_results.get(task_id, {}))
+        task_entry["commit_push"] = {"error": str(exc), "committed": True, "pushed": False}
+        updated_results[task_id] = task_entry
+        return {"task_results": updated_results, "errors": [], "failed_task_ids": []}
+
+    print(f"[cascade] commit_push: committed and pushed {branch_name}")
+
+    # Record success
+    updated_results = dict(state.get("task_results", {}))
+    task_entry = dict(updated_results.get(task_id, {}))
+    task_entry["commit_push"] = {"committed": True, "pushed": True, "branch": branch_name}
+    updated_results[task_id] = task_entry
+
+    return {"task_results": updated_results, "errors": [], "failed_task_ids": []}
+
+
 def test_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
     """Run TesterAgent on the current task."""
     task = get_current_task(state)
@@ -260,7 +342,7 @@ def update_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
         "task_id": task_id,
         "task_title": task.get("title", ""),
         "task_description": task.get("description", ""),
-        "source_branch": f"sprint-{sprint_prefix}/{task_id}",
+        "source_branch": f"task/sprint-{sprint_prefix}/{task_id}",
         "target_branch": f"sprint-{sprint_prefix}",
         "modified_files": coder_result.get("partial_output", {}).get("modified_files", []),
     }
@@ -330,6 +412,19 @@ def check_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
                 error = f"Task {task_id} failed: tests did not pass after retries"
                 new_errors.append(error)
                 new_failed.append(task_id)
+
+        # Completion validation — warn if no meaningful work was done
+        coder_result = state.get("task_results", {}).get(task_id, {}).get("coder", {})
+        modified_files = coder_result.get("partial_output", {}).get("modified_files", [])
+        pr_created = (
+            updater_result.get("partial_output", {}).get("pr_created", False)
+            if updater_result else False
+        )
+        if not modified_files and not pr_created and task_id not in state.get("failed_task_ids", []):
+            new_errors.append(
+                f"Task {task_id} completed with no file changes and no PR"
+                " — may need manual review"
+            )
 
     # Advance to next task
     new_index = state["current_task_index"] + 1
@@ -437,6 +532,7 @@ def build_cascade_graph(settings: Any, dry_run: bool = False):
     _plan = partial(plan_node, settings=settings, dry_run=dry_run)
     _setup = partial(setup_task_node, settings=settings, dry_run=dry_run)
     _code = partial(code_node, settings=settings, dry_run=dry_run)
+    _commit_push = partial(commit_push_node, settings=settings, dry_run=dry_run)
     _test = partial(test_node, settings=settings, dry_run=dry_run)
     _update = partial(update_node, settings=settings, dry_run=dry_run)
     _check = partial(check_node, settings=settings, dry_run=dry_run)
@@ -444,6 +540,7 @@ def build_cascade_graph(settings: Any, dry_run: bool = False):
     graph.add_node("plan_node", _plan)
     graph.add_node("setup_task_node", _setup)
     graph.add_node("code_node", _code)
+    graph.add_node("commit_push_node", _commit_push)
     graph.add_node("test_node", _test)
     graph.add_node("update_node", _update)
     graph.add_node("check_node", _check)
@@ -452,7 +549,8 @@ def build_cascade_graph(settings: Any, dry_run: bool = False):
     graph.add_edge(START, "plan_node")
     graph.add_conditional_edges("plan_node", route_after_plan)
     graph.add_edge("setup_task_node", "code_node")
-    graph.add_edge("code_node", "test_node")
+    graph.add_edge("code_node", "commit_push_node")
+    graph.add_edge("commit_push_node", "test_node")
     graph.add_conditional_edges("test_node", route_after_test)
     graph.add_edge("update_node", "check_node")
     graph.add_conditional_edges("check_node", route_after_check)

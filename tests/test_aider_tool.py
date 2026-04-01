@@ -289,6 +289,8 @@ class TestAiderToolCommandConstruction:
         assert "--no-auto-commits" in result.command
         assert "--no-pretty" in result.command
         assert "--no-stream" in result.command
+        assert "--no-show-model-warnings" in result.command
+        assert "--no-gitignore" in result.command
         assert "--model" in result.command
 
     def test_model_in_command(self):

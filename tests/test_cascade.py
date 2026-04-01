@@ -17,6 +17,7 @@ import pytest
 from orchestration.cascade import (
     MAX_OUTER_RETRIES,
     build_cascade_graph,
+    commit_push_node,
     route_after_check,
     route_after_plan,
     route_after_test,
@@ -627,3 +628,111 @@ class TestEscalation:
             "coder", "wi-1", "Task", result, 1, 5,
         )
         assert "truncated" in output
+
+
+# ---------------------------------------------------------------------------
+# commit_push_node tests
+# ---------------------------------------------------------------------------
+
+
+class TestCommitPushNode:
+    """Tests for the commit_push_node function."""
+
+    def _make_state(self, task_id="wi-1", modified_files=None):
+        """Build a minimal SprintState for commit_push_node."""
+        if modified_files is None:
+            modified_files = ["src/pipeline.py"]
+        return {
+            "sprint_id": "s-8",
+            "plan": {"sprint": "s-8", "goal": "", "tasks": []},
+            "tasks": [{"id": task_id, "title": "Add error handling"}],
+            "current_task_index": 0,
+            "task_results": {
+                task_id: {
+                    "coder": {
+                        "success": True,
+                        "partial_output": {
+                            "modified_files": modified_files,
+                        },
+                    },
+                },
+            },
+            "errors": [],
+            "iteration_counts": {},
+            "status": "running",
+            "failed_task_ids": [],
+            "abort_threshold": 0.5,
+            "max_tasks": 0,
+        }
+
+    @patch("orchestration.cascade.resolve_tool_class")
+    def test_commits_and_pushes_with_modified_files(self, mock_resolve):
+        mock_git = MagicMock()
+        mock_git.commit.return_value = MagicMock(success=True, dry_run=False)
+        mock_git.push.return_value = MagicMock(success=True, dry_run=False)
+        mock_git.task_branch_name.return_value = "task/sprint-8/wi-1"
+
+        mock_tool_cls = MagicMock(return_value=mock_git)
+        mock_resolve.return_value = mock_tool_cls
+
+        settings = MagicMock()
+        state = self._make_state(modified_files=["src/pipeline.py"])
+
+        result = commit_push_node(state, settings=settings, dry_run=False)
+
+        mock_git.commit.assert_called_once_with(
+            "[cascade] wi-1: Add error handling", ["src/pipeline.py"]
+        )
+        mock_git.push.assert_called_once_with("task/sprint-8/wi-1")
+        assert result["failed_task_ids"] == []
+        assert result["task_results"]["wi-1"]["commit_push"]["committed"] is True
+        assert result["task_results"]["wi-1"]["commit_push"]["pushed"] is True
+
+    @patch("orchestration.cascade.resolve_tool_class")
+    def test_commits_all_when_no_modified_files(self, mock_resolve):
+        mock_git = MagicMock()
+        mock_git.commit.return_value = MagicMock(success=True, dry_run=False)
+        mock_git.push.return_value = MagicMock(success=True, dry_run=False)
+        mock_git.task_branch_name.return_value = "task/sprint-8/wi-1"
+
+        mock_tool_cls = MagicMock(return_value=mock_git)
+        mock_resolve.return_value = mock_tool_cls
+
+        settings = MagicMock()
+        state = self._make_state(modified_files=[])
+
+        result = commit_push_node(state, settings=settings, dry_run=False)
+
+        # Should call commit without file list (git add -A)
+        mock_git.commit.assert_called_once_with("[cascade] wi-1: Add error handling")
+        assert result["failed_task_ids"] == []
+
+    @patch("orchestration.cascade.resolve_tool_class")
+    def test_commit_failure_does_not_fail_task(self, mock_resolve):
+        mock_git = MagicMock()
+        mock_git.commit.return_value = MagicMock(
+            success=False, dry_run=False, error="nothing to commit"
+        )
+
+        mock_tool_cls = MagicMock(return_value=mock_git)
+        mock_resolve.return_value = mock_tool_cls
+
+        settings = MagicMock()
+        state = self._make_state()
+
+        result = commit_push_node(state, settings=settings, dry_run=False)
+
+        assert result["failed_task_ids"] == []
+        assert result["task_results"]["wi-1"]["commit_push"]["committed"] is False
+
+    @patch("orchestration.cascade.resolve_tool_class")
+    def test_no_git_provider_skips_gracefully(self, mock_resolve):
+        mock_resolve.side_effect = Exception("no provider")
+
+        settings = MagicMock()
+        state = self._make_state()
+
+        result = commit_push_node(state, settings=settings, dry_run=False)
+
+        assert result["failed_task_ids"] == []
+        assert result["errors"] == []
