@@ -35,6 +35,9 @@ class BaseGitTool(ABC):
     def __init__(self, settings: Any, dry_run: bool = False) -> None:
         self.settings = settings
         self.dry_run = dry_run
+        # Target repo for all git operations. Defaults to aider_repo_dir
+        # so that branch/commit/push commands run in the correct repository.
+        self.repo_dir: str | None = getattr(settings, "aider_repo_dir", None)
         self._validate_cli()
 
     # ------------------------------------------------------------------ #
@@ -136,11 +139,13 @@ class BaseGitTool(ABC):
         """Execute a CLI command and return the result.
 
         Always executes — used for read operations.
+        Runs in self.repo_dir so git commands target the correct repository.
         """
         command_str = " ".join(cmd)
         try:
             result = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=30,
+                cwd=self.repo_dir,
             )
             return GitCommandResult(
                 command=command_str,

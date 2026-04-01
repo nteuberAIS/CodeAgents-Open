@@ -68,6 +68,20 @@ class TesterAgent(BaseAgent):
                 error_message="No repo_dir configured (set test_repo_dir or aider_repo_dir)",
             )
 
+        # Handle skip sentinel
+        if test_command.lower() in ("skip", "none", ""):
+            return self.wrap_result(
+                success=True,
+                partial_output={
+                    "test_passed": True,
+                    "passed_count": 0,
+                    "failed_count": 0,
+                    "error_count": 0,
+                    "test_output": "Tests skipped (TEST_COMMAND=skip)",
+                    "task_id": task_id,
+                },
+            )
+
         # Run tests via subprocess
         try:
             result = subprocess.run(

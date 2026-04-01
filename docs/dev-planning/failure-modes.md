@@ -154,7 +154,163 @@ Console output only for Phase 3. Structured file logging comes in Phase 6.
 
 ## Next Steps
 
-- [ ] Brainstorm failure scenarios from first few live sprint runs
+- [x] Brainstorm failure scenarios from first few live sprint runs
 - [x] Define minimum viable error handling for Phase 3
 - [ ] Design failure logging format for post-mortem analysis
 - [x] Decide on iteration caps per agent type
+
+---
+
+## Phase 3.5 — First Live Run Findings (2026-04-01)
+
+First-ever live cascade run against Sprint 1.4 (SynDataPlatform IaC repo on Azure DevOps).
+Target task: #17 — Fix SHIR NSG table stale entries (documentation/Bicep fix).
+Four live runs executed with incremental fixes between each.
+
+### Pre-run issues
+
+1. **Aider not installable in project venv** — Python 3.14 in venv, aider-chat requires <3.13.
+   All versions above 0.16.0 rejected by pip. Fixed by installing via `uv tool install aider-chat --python 3.12`.
+
+2. **Azure CLI not installed** — `az` not present on system. Installed via `winget install Microsoft.AzureCLI`.
+
+3. **`TEST_COMMAND=skip` not handled** — TesterAgent treated `"skip"` as a literal command to execute
+   via `subprocess.run(["skip"], ...)`, causing `[WinError 2] FileNotFoundError`. Every task failed
+   at the test node, bypassing update_node entirely. Zero PRs could ever be created.
+   **Fix applied**: Added skip sentinel check in `agents/tester.py` before the subprocess call.
+
+4. **Sprint target branch didn't exist** — PRs target `sprint-1.4` but that branch didn't exist on the
+   Azure DevOps remote. Created manually before the live run.
+
+### Runtime issues
+
+5. **`az.cmd` not found by subprocess (Windows)** — `subprocess.run(["az", ...])` raises
+   `FileNotFoundError` on Windows because the az CLI binary is `az.cmd`, not a plain executable.
+   `_validate_cli()` in `AzDevOpsTool` called `self._run_command(["az", "account", "show"])` which
+   failed silently (caught by `except Exception` in `setup_task_node`, logged at DEBUG).
+   This was invisible during dry runs because `_validate_cli` returns early when `dry_run=True`.
+   **Fix applied**: `AzDevOpsTool._run_command()` now resolves the full az binary path via
+   `shutil.which("az")` and passes it directly, avoiding shell=True entirely.
+
+6. **`shell=True` + `&` in PR title = shell injection** — Initial fix used `shell=True` with
+   `" ".join(cmd)`. PR title "Fix SHIR NSG table stale entries in Network Egress & PE Rules doc"
+   contained `&`, which `cmd.exe` interpreted as a command separator. Error:
+   `'PE' is not recognized as an internal or external command`.
+   **Fix applied**: Switched to `shutil.which()` approach (no shell=True). Added `_sanitize_for_cmd()`
+   to strip cmd.exe metacharacters from PR titles/descriptions as defense-in-depth, since `.cmd`
+   files still invoke `cmd.exe` internally.
+
+7. **git_tool.py had no `cwd` — all git ops ran in wrong repo** — `BaseGitTool._run_command()` called
+   `subprocess.run(cmd, ...)` without `cwd`. All git operations (branch creation, checkout) ran in
+   `CodeAgents-Open` instead of `SynDataPlatform`. The task branch `sprint-1.4/31da5e21-...` was
+   created in the agent repo, not the target repo. Aider still ran on `main` in SynDataPlatform.
+   **Fix applied**: Added `self.repo_dir` to `BaseGitTool.__init__` (from `settings.aider_repo_dir`),
+   passed `cwd=self.repo_dir` to all subprocess calls in both `BaseGitTool` and `AzDevOpsTool`.
+
+8. **Git ref naming collision** — The cascade creates task branches as `sprint-1.4/{task-id}` and PRs
+   target `sprint-1.4`. But if a local branch named `sprint-1.4` exists, git refuses to create
+   `sprint-1.4/{task-id}` because refs can't be both a file and a directory in `.git/refs/heads/`.
+   Error: `fatal: cannot lock ref 'refs/heads/sprint-1.4/test-branch': 'refs/heads/sprint-1.4' exists`.
+   The cascade caught this silently and proceeded on the current branch (usually `main`).
+   **Workaround**: Delete the local `sprint-1.4` branch before running; the remote ref suffices for PRs.
+   **Needs design fix**: Change naming convention to avoid collision (e.g., `task/sprint-1.4/{task-id}`).
+
+9. **No commit or push between code_node and update_node** — `aider_tool.py` uses `--no-auto-commits`
+   so Aider writes files but does not commit. The cascade's `update_node` creates a PR via
+   `az repos pr create` targeting `sprint-1.4/{task-id}` → `sprint-1.4`, but the source branch was
+   never committed to or pushed to the remote. PR creation fails with:
+   `TF401398: source and/or the target branch no longer exists, or the requested refs are not branches`.
+   `git_tool.py` has `commit()` and `push()` methods but neither is called by the cascade.
+   **Not yet fixed** — architectural gap requiring a new cascade node or additions to `code_node`/`update_node`.
+
+10. **Aider opens browser tab on every run** — Warning about `OLLAMA_API_BASE` not being set causes
+    Aider to open `https://aider.chat/docs/llms/warnings.html` in the default browser. Setting
+    `OLLAMA_API_BASE` in `.env` breaks Pydantic Settings validation (`extra = "forbid"`).
+    **Needs fix**: Pass `--no-show-model-warnings` flag in `aider_tool.py`, or set `OLLAMA_API_BASE`
+    as a subprocess-only env var in the Aider invocation.
+
+11. **Aider modifies `.gitignore` on target repo** — Aider adds `.aider*` to `.gitignore` on every run.
+    Combined with `--no-auto-commits`, this leaves uncommitted noise in the working tree.
+    **Needs fix**: Pass `--no-gitignore` flag in `aider_tool.py`, or add `.aider*` to the repo's
+    `.gitignore` permanently.
+
+12. **LLM instruction quality inconsistent** — CoderAgent's LLM generated instructions telling Aider
+    to "Open the Notion doc..." instead of identifying repo files to edit. Aider sometimes interpreted
+    this correctly (found `infra/modules/nsg-shir.bicep` on one run) and sometimes didn't (no changes
+    on another run). `modified_files: []` in the result even when Aider did modify files, because
+    the output was truncated before the "Wrote path" lines appeared.
+    **Needs fix**: Improve coder system prompt to emphasize that instructions are for Aider editing
+    local files, not Notion documents. Increase `aider_output` truncation limit.
+
+### What worked
+
+- **Ollama + qwen2.5-coder:7b** — LLM responded reliably, no timeouts or VRAM issues
+- **TesterAgent skip mode** — After fix, cleanly skipped tests with `success=True`
+- **Notion write-back** — UpdaterAgent successfully updated task status to "In Progress" in Notion
+- **Cascade state persistence** — `data/cascade/s-1.4.json` saved correctly after each run
+- **Abort threshold logic** — Not triggered (only 1 task per run), but routing worked correctly
+- **Dry-run mode** — Correctly skipped all write operations and CLI validation
+- **Aider invocation** — Aider CLI launched correctly, connected to Ollama, scanned repo,
+  and generated edits (when instructions were clear enough)
+- **Error accumulation** — Errors recorded in cascade state, printed in summary
+- **LangGraph routing** — All nodes executed in correct order, conditional routing worked
+
+### Architectural gaps
+
+1. **Missing commit+push step** (Critical) — The cascade has no mechanism to commit Aider's file
+   changes and push the branch to the remote before PR creation. This is the primary blocker for
+   end-to-end automation. Options:
+   - Add a `commit_and_push_node` between `code_node` and `test_node`
+   - Add commit+push logic to the end of `code_node`
+   - Add push logic to the beginning of `update_node`
+
+2. **Branch naming collision** (High) — The convention of `sprint-{N}` (target) and `sprint-{N}/{task-id}`
+   (source) creates git ref conflicts when a local branch named `sprint-{N}` exists. The cascade
+   doesn't detect or recover from this — it silently falls through and Aider runs on `main`.
+
+3. **No cwd in git operations** (Fixed) — Was an architectural gap; all git commands ran in the process
+   cwd rather than the target repo.
+
+4. **Windows CLI compatibility** (Partially fixed) — The system was designed for Unix-like environments.
+   Windows-specific issues with `.cmd` files, `cmd.exe` metacharacter parsing, and `shell=True` vs
+   `shell=False` tradeoffs needed multiple fixes.
+
+5. **Task completion false positives** (Medium) — UpdaterAgent returns `success=True` if Notion update
+   succeeds, even when PR creation failed and no code changes were made. The cascade marks the task
+   "completed" with 0 files changed and no PR. The `check_node` doesn't validate whether meaningful
+   work was actually done.
+
+6. **Aider subprocess environment** (Low) — Aider warnings about `OLLAMA_API_BASE` can't be suppressed
+   via `.env` because Pydantic Settings rejects unknown env vars. The env var needs to be set only
+   in the Aider subprocess environment, not globally.
+
+### Recommendations (ordered by priority)
+
+1. **Add commit+push step to cascade** — Insert between `code_node` and `test_node` (or at the end
+   of `code_node`). Use `git_tool.commit()` with the list of modified files from Aider, then
+   `git_tool.push()`. This unblocks end-to-end PR creation.
+
+2. **Fix branch naming convention** — Change task branches to `task/sprint-{N}/{task-id}` or
+   `sprint-{N}-tasks/{task-id}` to avoid ref collision with the sprint target branch.
+
+3. **Improve CoderAgent prompt** — Update `prompts/coder/system.j2` to explicitly state that
+   instructions are for Aider editing local repository files, not Notion pages. Include examples
+   of good vs bad instructions.
+
+4. **Add Aider CLI flags** — Pass `--no-show-model-warnings` and `--no-gitignore` in `aider_tool.py`
+   to suppress browser opening and `.gitignore` modification.
+
+5. **Set `OLLAMA_API_BASE` in Aider subprocess env** — In `aider_tool.py`, pass
+   `env={**os.environ, "OLLAMA_API_BASE": "http://localhost:11434"}` to the subprocess call.
+
+6. **Add completion validation to check_node** — Verify that `modified_files` is non-empty and
+   `pr_created` is True before marking a task as "completed". Mark as "partial" or "needs-review"
+   if code was generated but PR creation failed.
+
+7. **Increase Aider output capture limit** — The 2000-char truncation in CoderAgent loses the
+   "Wrote path/to/file" lines. Increase to 4000+ chars or parse modified files from Aider output
+   before truncation.
+
+8. **Add structured logging for cascade runs** — Currently using `print()` for progress and
+   `logger.debug()` for errors (invisible). Add INFO-level logging for branch creation results,
+   Aider file modifications, and PR creation outcomes.

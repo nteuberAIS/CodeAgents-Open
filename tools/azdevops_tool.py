@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from typing import Any
 
 from schemas.git_models import Branch, GitCommandResult, PullRequest
@@ -28,6 +30,59 @@ class AzDevOpsTool(BaseGitTool):
                 "AZURE_DEVOPS_PROJECT, and AZURE_DEVOPS_REPO in .env"
             )
         super().__init__(settings, dry_run)
+
+    @staticmethod
+    def _resolve_az() -> str:
+        """Resolve the az CLI executable path.
+
+        On Windows, az is installed as az.cmd. shutil.which() respects PATHEXT
+        and returns the full path (e.g. C:\\...\\az.cmd), allowing us to invoke
+        it as a list argument without shell=True — which avoids shell-injection
+        issues when PR titles or descriptions contain special characters like &.
+        """
+        path = shutil.which("az")
+        if path is None:
+            raise GitToolError(
+                "az CLI not found on PATH. Install it with: winget install Microsoft.AzureCLI"
+            )
+        return path
+
+    def _run_command(self, cmd: list[str]) -> GitCommandResult:
+        """Override base _run_command to resolve the az binary path.
+
+        Replaces the bare "az" token with the full path from shutil.which(),
+        then runs without shell=True so that special characters in arguments
+        (e.g. & in PR titles) are not interpreted by the shell.
+        Runs in self.repo_dir so git commands target the correct repository.
+        """
+        az = self._resolve_az()
+        resolved = [az if tok == "az" else tok for tok in cmd]
+        command_str = " ".join(cmd)  # keep original string for logging
+        try:
+            result = subprocess.run(
+                resolved,
+                shell=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=self.repo_dir,
+            )
+            return GitCommandResult(
+                command=command_str,
+                success=result.returncode == 0,
+                output=result.stdout.strip() if result.stdout else None,
+                error=(
+                    result.stderr.strip()
+                    if result.stderr and result.returncode != 0
+                    else None
+                ),
+            )
+        except subprocess.TimeoutExpired:
+            return GitCommandResult(
+                command=command_str,
+                success=False,
+                error="Command timed out after 30 seconds",
+            )
 
     def _validate_cli(self) -> None:
         """Check that az CLI is installed and authenticated."""
@@ -119,6 +174,18 @@ class AzDevOpsTool(BaseGitTool):
     #  Write operations                                                   #
     # ------------------------------------------------------------------ #
 
+    @staticmethod
+    def _sanitize_for_cmd(text: str) -> str:
+        """Strip cmd.exe metacharacters from text for safe CLI passing.
+
+        On Windows, az.cmd is executed via cmd.exe even with shell=False,
+        so characters like & | < > ^ % ! " in arguments cause parse errors.
+        Stripping them is acceptable for PR titles and descriptions.
+        """
+        for char in ('&', '|', '<', '>', '^', '%', '!', '"'):
+            text = text.replace(char, '')
+        return text.strip()
+
     def create_pull_request(
         self,
         title: str,
@@ -129,8 +196,8 @@ class AzDevOpsTool(BaseGitTool):
         """Create a pull request using az repos pr create."""
         cmd = [
             "az", "repos", "pr", "create",
-            "--title", title,
-            "--description", description,
+            "--title", self._sanitize_for_cmd(title),
+            "--description", self._sanitize_for_cmd(description or "Automated PR"),
             "--source-branch", source_branch,
             "--target-branch", target_branch,
             "--repository", self.repo,
