@@ -95,7 +95,7 @@ model selection (coding-oriented models) and RAG strategy (repo + docs).
 | Embeddings      | bge-small-en (via Ollama)   | Document embedding for RAG              |
 | Config          | Pydantic Settings           | Typed config with env-var overrides     |
 
-### Tools (Phase 2+)
+### Tools (Phase 2–3)
 
 | Tool             | Technology                  | Role                                    |
 |------------------|-----------------------------|-----------------------------------------|
@@ -139,7 +139,7 @@ CodeAgents-Open/
 ├── orchestration/          # Multi-agent flow (Phase 3)
 │   ├── graph.py            # LangGraph StateGraph definition
 │   ├── state.py            # Shared state schema (TypedDict)
-│   └── supervisor.py       # Supervisor node / router
+│   └── runner.py           # CascadeRunner wrapper
 ├── config/
 │   ├── settings.py         # Pydantic settings, registries
 │   └── .env                # Local overrides (gitignored)
@@ -189,35 +189,50 @@ OLLAMA_TEMPERATURE=0.2
 # updater → OLLAMA_MODEL_UPDATER=qwen2.5:3b (faster, simpler tasks)
 ```
 
-### 5.4 Multi-Agent Cascade (Phase 3 Target)
+### 5.4 Multi-Agent Cascade
 
-```
-User: "Run sprint 8"
-    │
-    ▼
-┌─────────────┐
-│  Supervisor  │◄──── LangGraph StateGraph (routes, retries, caps)
-└─────┬───────┘
-      │
-      ▼
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│   Planner   │───▶│    Coder    │───▶│   Tester    │───▶│   Updater   │
-│             │    │             │    │             │    │             │
-│ Pull Notion │    │ Aider edits │    │ pytest run  │    │ Notion push │
-│ Draft plan  │    │ Branch/commit│   │ Lint check  │    │ Azure PR    │
-│ RAG context │    │ RAG context │    │ Results log │    │ Close tasks │
-└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
-      │                  │                  │                  │
-      ▼                  ▼                  ▼                  ▼
-  Reflection         Reflection         Reflection         Reflection
-  Gate (3 max)       Gate (3 max)       Gate (3 max)       Gate (1 max)
+The cascade is orchestrated by a LangGraph `StateGraph` — there is no supervisor
+agent. Conditional routing functions handle flow control, retries, and abort logic.
+
+```mermaid
+graph LR
+    START --> plan_node
+    plan_node -->|has tasks| setup_task_node
+    plan_node -->|no tasks| END_node[END]
+    setup_task_node --> code_node
+    code_node --> commit_push_node
+    commit_push_node --> test_node
+    test_node -->|pass| update_node
+    test_node -->|fail, retries left| code_node
+    test_node -->|fail, no retries| check_node
+    update_node --> check_node
+    check_node -->|more tasks| setup_task_node
+    check_node -->|done or aborted| END_node
 ```
 
-Each node has:
-- **Reflection gate**: Self-critique ("does this match the spec?"). Capped
-  iterations to prevent loops.
-- **Human gate** (configurable): Pause for approval before destructive actions.
-- **Fallback**: On max retries, escalate to human with context dump.
+**Iteration caps per agent:**
+
+| Agent          | Max Iterations | Scope                                      |
+|----------------|----------------|---------------------------------------------|
+| SprintPlanner  | 2              | Near one-shot; retry once on JSON parse fail |
+| CoderAgent     | 5 (inner)      | Aider code-fix cycles within `code_node`     |
+| Orchestrator   | 2 (outer)      | Test failure → re-route to `code_node`       |
+| TesterAgent    | 1              | Single test run; failures are data           |
+| UpdaterAgent   | 2              | Retry once on transient PR/Notion failure    |
+
+**Two reflection layers:**
+- **Inner reflection**: CoderAgent retries Aider internally (up to 5 iterations)
+  when code edits fail or produce errors.
+- **Outer reflection**: After `test_node`, if tests fail and outer retries remain,
+  the orchestrator routes back to `code_node` (up to 2 retries).
+
+**`commit_push_node`** sits between `code_node` and `test_node` — it commits
+Aider's file changes and pushes the task branch to the remote, unblocking PR
+creation downstream.
+
+**Fallback**: On max retries, the task is marked as failed and added to
+`failed_task_ids`. If the failure ratio exceeds `abort_threshold`, the cascade
+aborts.
 
 ### 5.5 State & Checkpointing
 
@@ -241,18 +256,20 @@ resuming and auditing.
 ```python
 class SprintState(TypedDict):
     sprint_id: str
-    plan: dict                    # Output from Planner
-    current_task_id: str | None   # Which task is in progress
-    task_checkpoints: dict        # {task_id: {state, timestamp, agent}}
-    code_changes: list[dict]      # Files modified by Coder
-    test_results: dict            # Pass/fail from Tester
-    pr_url: str | None            # Azure DevOps PR link
-    notion_updates: list[dict]    # Notion page IDs updated
-    notion_local_snapshot: str    # Path to local Notion DB copy for this sprint
-    errors: list[str]             # Accumulated errors
-    iteration_counts: dict        # Per-node retry counters
-    status: str                   # "planning" | "coding" | "testing" | ...
+    plan: dict                                          # Full SprintPlanner output
+    tasks: list[dict]                                   # Individual task dicts from plan
+    current_task_index: int                             # Index into tasks list
+    task_results: dict[str, dict]                       # task_id → per-agent results
+    errors: Annotated[list[str], operator.add]           # Accumulated errors (reducer)
+    iteration_counts: dict[str, int]                    # "agent:task_id" → retry count
+    status: str                                         # running | completed | aborted | escalated
+    failed_task_ids: Annotated[list[str], operator.add]  # Skipped task IDs (reducer)
+    abort_threshold: float                              # Max failure ratio (default 0.5)
+    max_tasks: int                                      # Limit tasks processed (0 = all)
 ```
+
+> `errors` and `failed_task_ids` use LangGraph **reducer fields** — they
+> accumulate across nodes via `operator.add` rather than being overwritten.
 
 ---
 
@@ -305,9 +322,9 @@ Within the agent execution phase, each work item follows:
 2. Coder generates code on a **fresh branch derived from main**.
 3. Tester runs tests **on that task's branch**.
 4. If tests pass → PR is created targeting the **sprint branch**.
-5. PR is auto-reviewed by agents, then merged to sprint branch.
+5. PR is auto-reviewed by agents, then merged to sprint branch. *(Not yet implemented — UpdaterAgent creates PRs but auto-review/merge is a future goal.)*
 6. Checkpoint saved for the task.
-7. If tests fail → Coder retries with error context (max 3). On max → escalate.
+7. If tests fail → Coder retries with error context (max 5 inner / 2 outer). On max → escalate.
 
 ### 6.3 RAG Sync Pipeline
 
@@ -376,12 +393,12 @@ AZURE_DEVOPS_REPO=your-repo
 ### Git Workflow
 
 1. Agent clones/pulls latest `main`.
-2. Creates sprint branch: `sprint-{N}/`.
-3. Per task: creates feature branch from main: `sprint-{N}/{task-id}`.
+2. Creates sprint branch: `sprint-{N}`.
+3. Per task: creates feature branch from main: `task/sprint-{N}/{task-id}`.
 4. Aider makes edits, agent commits with structured messages.
 5. Tests run on the task branch.
 6. Agent creates PR targeting sprint branch via `az repos pr create`.
-7. Auto-review by agent, then merge to sprint branch.
+7. Auto-review by agent, then merge to sprint branch. *(Future goal — not yet implemented.)*
 8. Sprint branch → main only after full human review.
 
 ### Human Approval Gates
@@ -400,12 +417,13 @@ The following actions **always** require human confirmation:
 
 ### Databases to Sync
 
-- Sprint backlog (tasks, story points, status, assignee, deps)
-- ADRs / specs
-- Sprint retrospectives (for RAG context in future planning)
+Five Notion databases are synced (resolved in Phase 2a; IDs configured in `config/settings.py`):
 
-> Specific database IDs and schemas will be scoped before Phase 2
-> implementation begins.
+- **Work Items** (`notion_work_items_db`) — tasks, story points, status, assignee, deps
+- **Phases & Sprints** (`notion_sprints_db`) — sprint metadata and timelines
+- **Docs & Specs** (`notion_docs_db`) — technical documentation
+- **Decisions / ADRs** (`notion_decisions_db`) — architecture decision records
+- **Risks & Issues** (`notion_risks_db`) — tracked risks and open issues
 
 ### Sync Strategy — Local-First with Audit
 
@@ -441,7 +459,6 @@ override the model to match their task profile.
 | Coder          | Code generation    | deepseek-coder-v2, qwen2.5   |
 | Tester         | Code understanding | Same as Coder                 |
 | Updater        | Instruction follow | Smaller/faster model (3B?)    |
-| Supervisor     | Routing decisions  | Smallest viable model         |
 
 Override via env vars:
 
@@ -526,6 +543,7 @@ Mandatory approval before:
 | 3e    | TesterAgent + UpdaterAgent           | Complete    |
 | 3f    | LangGraph Cascade                    | Complete    |
 | 3g    | CLI Integration + Docs               | Complete    |
+| 3.5   | Live Validation & Fixes              | Complete    |
 | 4     | RAG & Context                      | Not started |
 | 5     | IDE & Review Tools                 | Not started |
 | 6     | Production Hardening               | Not started |
@@ -582,7 +600,7 @@ Items resolved from prior version:
 |-------------------------------------------|---------------------------------------------------|
 | 7B models produce low-quality code        | Reflection gates + human review. Upgrade models.  |
 | RAG retrieves irrelevant context          | Tune chunk size, embedding model, top-k.          |
-| Agents loop endlessly                     | Hard iteration caps per node. Supervisor timeout.  |
+| Agents loop endlessly                     | Hard iteration caps per node. LangGraph abort threshold. |
 | Notion API rate limits                    | Batch writes, cache reads, respect rate headers.  |
 | Task branch diverges from main            | Fresh branch from main per task, not from sprint.  |
 | VRAM exhaustion with larger models        | Stick to Q4 quant. Monitor with `nvidia-smi`.     |

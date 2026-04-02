@@ -108,22 +108,32 @@ env-var overridable (set `OLLAMA_MODEL=mistral:7b` to swap models).
 The cascade is orchestrated via LangGraph `StateGraph`. Each agent is a graph
 node; conditional edges define the flow with reflection loops.
 
-```
-python main.py cascade "Deploy SHIR"
-    │
-    ▼
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│   Planner    │────▶│    Coder     │────▶│    Tester    │────▶│   Updater    │
-│ (sprint plan)│     │ (Aider CLI)  │     │ (pytest)     │     │ (Notion/git) │
-└──────────────┘     └──────────────┘     └──────────────┘     └──────────────┘
-                          ▲    │                │
-                          │    ▼                │
-                          └── test failure ─────┘
-                          (outer retry, max 2)
+```mermaid
+graph LR
+    START --> plan_node
+    plan_node -->|has tasks| setup_task_node
+    plan_node -->|no tasks| END_node[END]
+    setup_task_node --> code_node
+    code_node --> commit_push_node
+    commit_push_node --> test_node
+    test_node -->|pass| update_node
+    test_node -->|fail, retries left| code_node
+    test_node -->|fail, no retries| check_node
+    update_node --> check_node
+    check_node -->|more tasks| setup_task_node
+    check_node -->|done or aborted| END_node
 ```
 
+`commit_push_node` commits Aider's file changes and pushes the task branch
+(`task/sprint-{N}/{task-id}`) to the remote before tests run.
+
+**Aider configuration** (`tools/aider_tool.py`):
+- Edit format: `udiff` (configurable via `aider_edit_format` setting)
+- CLI flags: `--no-auto-commits`, `--no-show-model-warnings`, `--no-gitignore`,
+  `--no-detect-urls`, `--map-tokens 1024`, `--edit-format udiff`
+
 **Key components:**
-- `orchestration/cascade.py` — StateGraph with 6 nodes and conditional routing
+- `orchestration/cascade.py` — StateGraph with 7 nodes and conditional routing
 - `orchestration/runner.py` — CascadeRunner wraps graph invocation + summary
 - `schemas/sprint_state.py` — SprintState TypedDict with reducer fields
 - State saved to `data/cascade/{sprint_id}.json` after completion
