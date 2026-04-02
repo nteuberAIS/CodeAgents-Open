@@ -81,6 +81,8 @@ class Settings(BaseSettings):
     rag_chunk_size: int = 4000           # Files under this stay as single document
     rag_chunk_overlap: int = 200         # Overlap for secondary char-limit splits
     rag_max_chunk_size: int = 4000       # Hard cap per chunk (nomic 8K tokens ≈ ~4K chars for dense content)
+    rag_top_k: int = 5                   # Default number of retrieval results
+    rag_score_threshold: float | None = None  # Min similarity score (None = no filter)
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

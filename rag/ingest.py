@@ -131,6 +131,7 @@ def ingest_notion_content(
     collection = client.get_or_create_collection(
         name=COLLECTION_NAME,
         embedding_function=ef,
+        metadata={"hnsw:space": "cosine"},
     )
 
     # Add chunks in batches.
