@@ -125,10 +125,36 @@
 - [x] Removed TaskPlannerAgent (premature, deferred to post-RAG)
 - [x] All findings documented in `docs/dev-planning/failure-modes.md`
 
-## Phase 4: RAG & Context
-- [ ] Local Notion mirror (export → vector DB)
-- [ ] RAG retriever injected into agent prompts
-- [ ] Context-aware sprint planning from historical data
+## Phase 4a: RAG Ingestion ✓
+- [x] ChromaDB vector database with Ollama embeddings (nomic-embed-text)
+- [x] Hybrid chunking strategy (document-level for short pages, section-level for long)
+- [x] Notion markup stripping before embedding (reduces token count)
+- [x] Entity metadata attached to chunks (entity_type, status, priority, sprint_id)
+- [x] `ingest` CLI subcommand with `--force` and `--dry-run` support
+- [x] Cosine similarity distance metric (`hnsw:space: cosine`)
+
+## Phase 4b: RAG Retriever ✓
+- [x] RAGRetriever with semantic search, metadata filtering, score thresholding
+- [x] `notion_ids` filter for composed queries (snapshot IDs → RAG filter)
+- [x] `format_results()` for prompt-ready context strings with char budget
+- [x] BaseAgent `rag` parameter and `retrieve()` helper method
+- [x] Settings: `rag_top_k`, `rag_score_threshold`
+
+## Phase 4c: Agent Integration & Context-Aware Planning ✓
+- [x] SnapshotLookup — relational index over JSON snapshots for O(1) entity lookups
+- [x] Composed query pattern: snapshot provides relation IDs → RAG filters by those IDs
+- [x] SprintPlannerAgent: RAG for sprint goal context + snapshot for linked risks
+- [x] CoderAgent: RAG for task-relevant docs + snapshot for linked docs/ADRs + composed queries
+- [x] BaseAgent `snapshot` parameter and `lookup_relations()` helper method
+- [x] RAG/snapshot wired through cascade via CascadeRunner → build_cascade_graph → partial() bindings
+- [x] Graceful degradation — agents work without RAG/snapshot (fallback to curate_context)
+- [x] Prompts updated with conditional retrieved_context and linked_context sections
+
+## Phase 4c.5: Parser Fixes & Live Validation ✓
+- [x] Aider `modified_files` parser handles udiff format (`+++ b/path` lines)
+- [x] PR URL extraction parses JSON from `az repos pr create -o json` (constructs web URL)
+- [x] Live cascade validated: ADLS capacity alert task, end-to-end with RAG context
+- [x] RAG quality confirmed: linked docs improved coder instruction quality
 
 ## Phase 5: IDE & Review Tools
 - [ ] Continue.dev integration for IDE-level changes

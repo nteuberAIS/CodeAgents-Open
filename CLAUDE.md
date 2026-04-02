@@ -12,7 +12,7 @@ Local, zero-cost AI agent system for sprint automation. Solo developer project.
 - `agents/` — Agent classes inheriting `BaseAgent` (ABC with LLM injection)
 - `tools/` — External tool wrappers (Notion sync, Notion write-back, Git providers, block renderer)
 - `schemas/` — Pydantic models (NOT `models/` — that's gitignored for Ollama cache)
-- `rag/` — RAG pipeline (ChromaDB ingestion, retriever — Phase 4)
+- `rag/` — RAG pipeline (ChromaDB ingestion, semantic retriever, snapshot relational lookup — Phase 4)
 - `config/` — Settings, LLM factory, agent/tool registries
 - `data/notion/` — Local JSON snapshots from Notion sync
 - `prompts/` — Jinja2 prompt templates per agent (e.g., `sprint_planner/system.j2`)
@@ -68,5 +68,4 @@ pytest tests/                                 # Run all tests
 - Phase 2.5 (Agent Quality Pass): Complete
 - Phase 2.6a–2.6b (Doc Cleanup, Benchmarking): Complete
 - Phase 3 (Multi-Agent Cascade): Complete
-- Phase 4a (RAG Ingestion): In progress — ChromaDB + nomic-embed-text via Ollama
-- Next: Phase 4b (RAG Retriever) — see docs/roadmap.md
+- Phase 4 (RAG & Context): Complete

@@ -91,8 +91,8 @@ model selection (coding-oriented models) and RAG strategy (repo + docs).
 | Orchestration    | LangGraph (StateGraph)      | Graph control flow, state, loops        |
 | Agent Framework  | CrewAI or LangChain agents  | Role-based teams, delegation            |
 | LLM             | Ollama + ChatOllama         | Local inference                         |
-| RAG             | ChromaDB + bge-small-en     | Vector store for Notion mirror          |
-| Embeddings      | bge-small-en (via Ollama)   | Document embedding for RAG              |
+| RAG             | ChromaDB + nomic-embed-text | Vector store for Notion mirror          |
+| Embeddings      | nomic-embed-text (via Ollama) | Document embedding for RAG            |
 | Config          | Pydantic Settings           | Typed config with env-var overrides     |
 
 ### Tools (Phase 2–3)
@@ -133,9 +133,9 @@ CodeAgents-Open/
 │   ├── aider_tool.py       # Phase 5: Aider CLI wrapper
 │   └── continue_tool.py    # Phase 5: Continue.dev bridge
 ├── rag/                    # RAG pipeline (Phase 4)
-│   ├── ingest.py           # Notion → ChromaDB loader
-│   ├── retriever.py        # Query interface for agents
-│   └── sync.py             # Delta sync / cron updates
+│   ├── ingest.py           # Notion → ChromaDB ingestion
+│   ├── retriever.py        # Semantic search query interface
+│   └── snapshot_lookup.py  # Relational snapshot index for composed queries
 ├── orchestration/          # Multi-agent flow (Phase 3)
 │   ├── graph.py            # LangGraph StateGraph definition
 │   ├── state.py            # Shared state schema (TypedDict)
@@ -326,28 +326,39 @@ Within the agent execution phase, each work item follows:
 6. Checkpoint saved for the task.
 7. If tests fail → Coder retries with error context (max 5 inner / 2 outer). On max → escalate.
 
-### 6.3 RAG Sync Pipeline
+### 6.3 RAG Context Pipeline
 
 ```
-Notion (source of truth — cloud)
-    │
-    ▼ Export / API pull (full or delta)
-┌─────────────┐
-│  Ingest     │──▶ Chunk + embed (bge-small-en) ──▶ ChromaDB
-└─────────────┘
-    │
-    ▼ Agents query local copy at runtime
-┌─────────────┐
-│  Retriever  │──▶ Top-k context injected into prompts
-└─────────────┘
-    │
-    ▼ Post-audit, push approved updates
-┌─────────────┐
-│  Notion API │──▶ Sync approved changes to cloud
-└─────────────┘
+Notion (cloud) → sync → JSON snapshots + content/*.md
+                              │
+                              ▼
+                  ┌──────────────────────┐
+                  │  Ingest              │
+                  │  Chunk + embed       │──▶ ChromaDB (nomic-embed-text)
+                  │  (nomic-embed-text)  │
+                  └──────────────────────┘
+
+Agents query at runtime via dual-context pattern:
+
+┌──────────────────┐     ┌───────────────────┐
+│  RAGRetriever    │     │  SnapshotLookup   │
+│  (semantic)      │     │  (relational)     │
+│  ChromaDB query  │     │  JSON index O(1)  │
+└────────┬─────────┘     └────────┬──────────┘
+         │                        │
+         │   ┌────────────────────┘
+         │   │  Composed queries:
+         │   │  snapshot IDs → RAG filter
+         ▼   ▼
+   ┌─────────────────┐
+   │  Agent prompt   │
+   │  (context)      │
+   └─────────────────┘
 ```
 
-> **OPEN**: Delta sync strategy — timestamp-based polling is the most practical
+> **DEFERRED**: Delta sync strategy deferred to Phase 5+. Current implementation
+> uses bulk re-ingest via `python main.py ingest` (with `--force` for full rebuild).
+> Timestamp-based polling remains the most practical approach when implemented,
 > given Notion doesn't support native webhooks.
 
 ### 6.4 Git Branching Strategy
@@ -544,7 +555,8 @@ Mandatory approval before:
 | 3f    | LangGraph Cascade                    | Complete    |
 | 3g    | CLI Integration + Docs               | Complete    |
 | 3.5   | Live Validation & Fixes              | Complete    |
-| 4     | RAG & Context                      | Not started |
+| 4     | RAG & Context                      | Complete    |
+| 4c.5  | Parser Fixes & Live Validation     | Complete    |
 | 5     | IDE & Review Tools                 | Not started |
 | 6     | Production Hardening               | Not started |
 
@@ -568,7 +580,7 @@ These topics need further thought and are tracked in `dev-planning/`:
 | #  | Question                                                                 | Phase | Priority | Status   |
 |----|--------------------------------------------------------------------------|-------|----------|----------|
 | 1  | WSL2/Docker vs native Windows for container workflows?                   | 5+    | Low      | Open     |
-| 2  | Delta sync from Notion — polling interval?                               | 4     | Medium   | Open     |
+| 2  | Delta sync from Notion — polling interval?                               | 5+    | Medium   | Deferred |
 | 3  | Prompt versioning beyond git — eval harness?                             | 2     | Medium   | Deferred |
 | 4  | Which Notion databases are in scope (IDs, schemas)?                      | 2     | High     | Resolved |
 | 5  | Git tool must support both Azure DevOps (az repos) and GitHub (gh CLI) — abstraction layer needed? | 2b | High | Resolved |

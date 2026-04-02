@@ -2,7 +2,7 @@
 
 > **Status**: Partially resolved — core templating implemented in Phase 2.5, remaining items deferred.
 > **Relevant Phase**: Phase 2+ (all agents depend on prompts)
-> **Last Updated**: 2026-04-01
+> **Last Updated**: 2026-04-02
 
 ---
 
@@ -92,4 +92,4 @@ Phase 2.5 resolved core prompt management:
 - [x] Cross-agent output schemas / cascade contract → AgentResult envelope + SprintState TypedDict (Phase 3a–3b)
 - [ ] Create PR/commit message templates (deferred — UpdaterAgent uses LLM-generated descriptions)
 - [ ] Prompt versioning / A/B testing (Phase 6)
-- [ ] Domain primer for data platform terminology (Phase 4 / RAG)
+- [x] Domain primer for data platform terminology → Addressed via RAG context enrichment (Phase 4c). Agents receive domain-specific content from linked docs and semantic search, replacing the need for a static primer.

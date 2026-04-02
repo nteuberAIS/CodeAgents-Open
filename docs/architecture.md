@@ -38,7 +38,12 @@ CodeAgents-Open/
 │   │   ├── templates/       # Database templates
 │   │   ├── pending_changes.json  # Local mutation changelog
 │   │   └── local_snapshot.json   # Merged local state
-│   └── cascade/            # Saved cascade run states (JSON)
+│   ├── cascade/            # Saved cascade run states (JSON)
+│   └── chroma/            # ChromaDB persistent vector storage (gitignored)
+├── rag/
+│   ├── ingest.py          # Notion content → ChromaDB ingestion
+│   ├── retriever.py       # Semantic search query interface
+│   └── snapshot_lookup.py # Relational snapshot index for composed queries
 ├── orchestration/
 │   ├── cascade.py          # LangGraph StateGraph (plan→code→test→update)
 │   └── runner.py           # CascadeRunner high-level wrapper
@@ -137,3 +142,54 @@ graph LR
 - `orchestration/runner.py` — CascadeRunner wraps graph invocation + summary
 - `schemas/sprint_state.py` — SprintState TypedDict with reducer fields
 - State saved to `data/cascade/{sprint_id}.json` after completion
+
+## RAG Pipeline (Phase 4)
+
+Agents receive context from two complementary sources:
+
+1. **RAGRetriever** (semantic search) — queries ChromaDB for content relevant to a task description
+2. **SnapshotLookup** (relational queries) — follows entity links in JSON snapshots (e.g., task → linked docs)
+3. **Composed queries** — snapshot provides relation IDs, RAG filters by those IDs for targeted retrieval
+
+```
+Notion (cloud) → sync → JSON snapshots + content/*.md
+                              │
+                              ▼
+                  ingest → ChromaDB (embeddings)
+                              │
+              ┌───────────────┴───────────────┐
+              ▼                               ▼
+    RAGRetriever.query()          SnapshotLookup.get_related()
+    (semantic search)             (relation traversal)
+              │                               │
+              └───────────┬───────────────────┘
+                          ▼
+                   Agent prompt context
+```
+
+**Configuration** (`config/settings.py`):
+- `chroma_db_path`: persistent storage location (`data/chroma/`)
+- `embedding_model`: `nomic-embed-text` via Ollama
+- `rag_chunk_size` / `rag_max_chunk_size`: hybrid chunking thresholds (4000 chars)
+- `rag_chunk_overlap`: paragraph-level split overlap (200 chars)
+- `rag_top_k`: default retrieval count (5)
+- `rag_score_threshold`: minimum similarity filter (None by default)
+
+**Graceful degradation**: Agents work without RAG/snapshot — `retrieve()` and
+`lookup_relations()` return empty lists when no retriever or snapshot is set.
+
+**Cascade wiring**: `CascadeRunner` accepts optional `rag` and `snapshot` params,
+threaded through to node functions via `functools.partial()` bindings in
+`build_cascade_graph()`.
+
+## CLI Commands
+
+### Ingest
+
+```bash
+python main.py ingest              # Embed Notion content into ChromaDB
+python main.py ingest --force      # Re-ingest from scratch (delete + rebuild)
+python main.py ingest --dry-run    # Show what would be ingested
+```
+
+See `CLAUDE.md` for the full command reference.
