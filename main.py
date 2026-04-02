@@ -212,10 +212,28 @@ def cmd_run(args) -> None:
     # Resolve agent class and curate context (filter entities, load page content)
     agent_cls = resolve_agent_class(args.agent, settings)
     content_dir = Path(settings.data_dir) / "notion" / "content"
+
+    # Initialize RAG retriever (optional — graceful if ChromaDB not populated)
+    rag = None
+    try:
+        from rag.retriever import RAGRetriever
+        rag = RAGRetriever(settings)
+    except Exception:
+        pass
+
+    # Initialize snapshot lookup from raw context (before curation filters entities)
+    snapshot = None
+    if context:
+        try:
+            from rag.snapshot_lookup import SnapshotLookup
+            snapshot = SnapshotLookup(context)
+        except Exception:
+            pass
+
     context = agent_cls.curate_context(context, content_dir=content_dir)
 
     llm = get_llm(settings, agent_name=args.agent)
-    agent = agent_cls(llm=llm, context=context)
+    agent = agent_cls(llm=llm, context=context, rag=rag, snapshot=snapshot)
 
     # Auto-bind tools (unless --no-tools)
     if not args.no_tools:
@@ -422,7 +440,25 @@ def cmd_cascade(args) -> None:
     if sprint_goal and sprint_goal not in goal:
         goal = f"{goal}\n\nSprint goal: {sprint_goal}"
 
-    runner = CascadeRunner(settings, dry_run=args.dry_run)
+    # Initialize RAG retriever (optional — graceful if ChromaDB not populated)
+    rag = None
+    try:
+        from rag.retriever import RAGRetriever
+        rag = RAGRetriever(settings)
+    except Exception:
+        pass
+
+    # Initialize snapshot lookup from raw context for relational queries
+    snapshot = None
+    raw_context = _load_notion_context(settings)
+    if raw_context:
+        try:
+            from rag.snapshot_lookup import SnapshotLookup
+            snapshot = SnapshotLookup(raw_context)
+        except Exception:
+            pass
+
+    runner = CascadeRunner(settings, dry_run=args.dry_run, rag=rag, snapshot=snapshot)
     max_tasks = args.max_tasks or 0
     final_state = runner.run(
         sprint_id=sprint_id,

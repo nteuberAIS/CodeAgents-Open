@@ -175,7 +175,7 @@ def _mock_agent_class(run_returns):
         REQUIRED_TOOLS: list[str] = []
         OPTIONAL_TOOLS: list[str] = []
 
-        def __init__(self, llm=None, context=None):
+        def __init__(self, llm=None, context=None, **kwargs):
             self.llm = llm
             self.tools: dict = {}
 
@@ -736,3 +736,76 @@ class TestCommitPushNode:
 
         assert result["failed_task_ids"] == []
         assert result["errors"] == []
+
+
+# ---------------------------------------------------------------------------
+# Tests — RAG / snapshot passthrough
+# ---------------------------------------------------------------------------
+
+class TestRAGSnapshotPassthrough:
+    """Verify that rag and snapshot are passed through to agent constructors."""
+
+    def test_code_node_passes_rag_snapshot(self):
+        """code_node should forward rag and snapshot kwargs to agent constructor."""
+        agents = _build_agent_map()
+        mock_rag = MagicMock()
+        mock_snapshot = MagicMock()
+
+        context = _make_notion_context(num_tasks=1)
+        tasks = _tasks_from_context(context, "sprint-8")
+
+        def mock_resolve(name, settings=None):
+            if name in agents:
+                return agents[name]
+            raise ValueError(f"Unknown agent: {name}")
+
+        with (
+            patch("orchestration.cascade.resolve_agent_class", side_effect=mock_resolve),
+            patch("orchestration.cascade.get_llm", return_value=MagicMock()),
+            patch("orchestration.cascade.resolve_tool_class", side_effect=ValueError("no git")),
+        ):
+            settings = MagicMock()
+            settings.test_repo_dir = None
+            settings.aider_repo_dir = None
+            settings.data_dir = "data"
+            graph = build_cascade_graph(
+                settings, dry_run=False, rag=mock_rag, snapshot=mock_snapshot
+            )
+            initial_state: SprintState = {
+                "sprint_id": "sprint-8",
+                "plan": {"goal": "Test goal"},
+                "tasks": tasks,
+                "current_task_index": 0,
+                "task_results": {},
+                "errors": [],
+                "iteration_counts": {},
+                "status": "planning",
+                "failed_task_ids": [],
+                "abort_threshold": 0.5,
+            }
+            graph.invoke(initial_state, config={"recursion_limit": 200})
+
+        # Verify coder agent was instantiated with rag and snapshot
+        agents["coder"].assert_called()
+        call_kwargs = agents["coder"].call_args
+        assert call_kwargs.kwargs.get("rag") is mock_rag
+        assert call_kwargs.kwargs.get("snapshot") is mock_snapshot
+
+    def test_cascade_runner_passes_rag_snapshot(self):
+        """CascadeRunner should thread rag/snapshot to build_cascade_graph."""
+        mock_rag = MagicMock()
+        mock_snapshot = MagicMock()
+
+        with patch("orchestration.runner.build_cascade_graph") as mock_build:
+            mock_build.return_value = MagicMock()
+            CascadeRunner(
+                settings=MagicMock(),
+                dry_run=False,
+                rag=mock_rag,
+                snapshot=mock_snapshot,
+            )
+
+        mock_build.assert_called_once()
+        call_kwargs = mock_build.call_args
+        assert call_kwargs.kwargs.get("rag") is mock_rag
+        assert call_kwargs.kwargs.get("snapshot") is mock_snapshot

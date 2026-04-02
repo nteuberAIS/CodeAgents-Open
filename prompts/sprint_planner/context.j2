@@ -10,4 +10,14 @@ Work Items in this sprint:
 
 {{ extra_context }}Use the above backlog data to inform your sprint plan. Reference existing
 work item names where relevant. Prioritize items that are Ready or Backlog.
+{% if retrieved_context %}
+
+--- RETRIEVED CONTEXT (from similar past work) ---
+{{ retrieved_context }}
+{% endif %}
+{% if linked_context %}
+
+--- LINKED REFERENCES ---
+{{ linked_context }}
+{% endif %}
 {{ page_content_section }}

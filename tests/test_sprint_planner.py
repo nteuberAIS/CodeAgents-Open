@@ -314,6 +314,8 @@ class TestPromptExternalization:
             work_items_summary="- item 1",
             extra_context="",
             page_content_section="",
+            retrieved_context="",
+            linked_context="",
         )
         assert "Sprint 8" in ctx
         assert "Test goal" in ctx

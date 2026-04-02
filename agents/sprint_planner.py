@@ -207,6 +207,38 @@ class SprintPlannerAgent(BaseAgent):
 
         page_content_section = self._format_page_content()
 
+        # RAG semantic search for sprint goal context
+        retrieved_context = ""
+        if self.rag and active:
+            goal = active.get("goal", "")
+            if goal:
+                rag_results = self.retrieve(goal, top_k=3)
+                if rag_results:
+                    retrieved_context = self.rag.format_results(
+                        rag_results, max_chars=3000
+                    )
+
+        # Snapshot relational lookup for sprint-linked risks
+        linked_context = ""
+        if self.snapshot and active:
+            sprint_notion_id = active.get("notion_id", "")
+            if sprint_notion_id:
+                sprint_risks = self.lookup_relations(
+                    sprint_notion_id, "risk_ids"
+                )
+                if sprint_risks:
+                    risk_lines = ["Linked Risks (from sprint relations):"]
+                    for r in sprint_risks:
+                        sev = r.get("severity", "?")
+                        status_r = r.get("status", "?")
+                        name_r = r.get("name", "Untitled")
+                        mitigation = r.get("mitigation_plan", "")
+                        line = f"- [{sev}] [{status_r}] {name_r}"
+                        if mitigation:
+                            line += f" — Mitigation: {mitigation}"
+                        risk_lines.append(line)
+                    linked_context = "\n".join(risk_lines)
+
         return self.load_prompt(
             "sprint_planner/context.j2",
             sprint_name=sprint_name,
@@ -216,6 +248,8 @@ class SprintPlannerAgent(BaseAgent):
             work_items_summary=work_items_summary,
             extra_context=extra_context,
             page_content_section=page_content_section,
+            retrieved_context=retrieved_context,
+            linked_context=linked_context,
         )
 
     def _format_page_content(self) -> str:

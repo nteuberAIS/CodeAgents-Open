@@ -139,7 +139,7 @@ def setup_task_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict
     return {"errors": [], "failed_task_ids": []}
 
 
-def code_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
+def code_node(state: SprintState, *, settings: Any, dry_run: bool, rag: Any = None, snapshot: Any = None) -> dict:
     """Run CoderAgent on the current task, with optional test-failure feedback."""
     task = get_current_task(state)
     if task is None:
@@ -166,7 +166,7 @@ def code_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
 
     agent_cls = resolve_agent_class("coder", settings)
     llm = get_llm(settings, agent_name="coder")
-    agent = agent_cls(llm=llm)
+    agent = agent_cls(llm=llm, rag=rag, snapshot=snapshot)
     tool_names = getattr(agent_cls, "REQUIRED_TOOLS", []) + getattr(agent_cls, "OPTIONAL_TOOLS", [])
     if tool_names:
         agent.bind_tools(tool_names, settings, dry_run=dry_run)
@@ -279,7 +279,7 @@ def commit_push_node(state: SprintState, *, settings: Any, dry_run: bool) -> dic
     return {"task_results": updated_results, "errors": [], "failed_task_ids": []}
 
 
-def test_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
+def test_node(state: SprintState, *, settings: Any, dry_run: bool, rag: Any = None, snapshot: Any = None) -> dict:
     """Run TesterAgent on the current task."""
     task = get_current_task(state)
     if task is None:
@@ -298,7 +298,7 @@ def test_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
 
     agent_cls = resolve_agent_class("tester", settings)
     llm = get_llm(settings, agent_name="tester")
-    agent = agent_cls(llm=llm)
+    agent = agent_cls(llm=llm, rag=rag, snapshot=snapshot)
 
     result = agent.run(json.dumps(test_input))
 
@@ -324,7 +324,7 @@ def test_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
     }
 
 
-def update_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
+def update_node(state: SprintState, *, settings: Any, dry_run: bool, rag: Any = None, snapshot: Any = None) -> dict:
     """Run UpdaterAgent — create PR, update Notion status."""
     task = get_current_task(state)
     if task is None:
@@ -361,7 +361,7 @@ def update_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
 
     agent_cls = resolve_agent_class("updater", settings)
     llm = get_llm(settings, agent_name="updater")
-    agent = agent_cls(llm=llm)
+    agent = agent_cls(llm=llm, rag=rag, snapshot=snapshot)
     tool_names = getattr(agent_cls, "REQUIRED_TOOLS", []) + getattr(agent_cls, "OPTIONAL_TOOLS", [])
     if tool_names:
         agent.bind_tools(tool_names, settings, dry_run=dry_run)
@@ -516,25 +516,27 @@ def route_after_check(state: SprintState) -> str:
 # Graph builder
 # ---------------------------------------------------------------------------
 
-def build_cascade_graph(settings: Any, dry_run: bool = False):
+def build_cascade_graph(settings: Any, dry_run: bool = False, rag: Any = None, snapshot: Any = None):
     """Build and compile the cascade StateGraph.
 
     Args:
         settings: Application settings (passed to agent/tool factories).
         dry_run: If True, tools operate in dry-run mode.
+        rag: Optional RAGRetriever instance for semantic search.
+        snapshot: Optional SnapshotLookup instance for relational queries.
 
     Returns:
         A compiled LangGraph StateGraph ready for ``invoke()``.
     """
     graph = StateGraph(SprintState)
 
-    # Bind settings/dry_run into node functions
+    # Bind settings/dry_run/rag/snapshot into node functions
     _plan = partial(plan_node, settings=settings, dry_run=dry_run)
     _setup = partial(setup_task_node, settings=settings, dry_run=dry_run)
-    _code = partial(code_node, settings=settings, dry_run=dry_run)
+    _code = partial(code_node, settings=settings, dry_run=dry_run, rag=rag, snapshot=snapshot)
     _commit_push = partial(commit_push_node, settings=settings, dry_run=dry_run)
-    _test = partial(test_node, settings=settings, dry_run=dry_run)
-    _update = partial(update_node, settings=settings, dry_run=dry_run)
+    _test = partial(test_node, settings=settings, dry_run=dry_run, rag=rag, snapshot=snapshot)
+    _update = partial(update_node, settings=settings, dry_run=dry_run, rag=rag, snapshot=snapshot)
     _check = partial(check_node, settings=settings, dry_run=dry_run)
 
     graph.add_node("plan_node", _plan)

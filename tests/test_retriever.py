@@ -191,6 +191,39 @@ class TestRAGRetrieverQuery:
         assert {"status": "Ready"} in where["$and"]
         assert {"sprint_id": "sp-001"} in where["$and"]
 
+    def test_filter_single_notion_id(self, tmp_path):
+        self.mock_collection.query.return_value = _make_query_result([], [], [])
+
+        RAGRetriever = _reload_retriever()
+        retriever = RAGRetriever(_make_settings(tmp_path))
+        retriever.query("test", notion_ids=["wi-001"])
+
+        call_kwargs = self.mock_collection.query.call_args.kwargs
+        assert call_kwargs["where"] == {"notion_id": "wi-001"}
+
+    def test_filter_multiple_notion_ids(self, tmp_path):
+        self.mock_collection.query.return_value = _make_query_result([], [], [])
+
+        RAGRetriever = _reload_retriever()
+        retriever = RAGRetriever(_make_settings(tmp_path))
+        retriever.query("test", notion_ids=["wi-001", "wi-002", "doc-001"])
+
+        call_kwargs = self.mock_collection.query.call_args.kwargs
+        assert call_kwargs["where"] == {"notion_id": {"$in": ["wi-001", "wi-002", "doc-001"]}}
+
+    def test_notion_ids_combined_with_entity_types(self, tmp_path):
+        self.mock_collection.query.return_value = _make_query_result([], [], [])
+
+        RAGRetriever = _reload_retriever()
+        retriever = RAGRetriever(_make_settings(tmp_path))
+        retriever.query("test", entity_types=["doc"], notion_ids=["doc-001", "doc-002"])
+
+        call_kwargs = self.mock_collection.query.call_args.kwargs
+        where = call_kwargs["where"]
+        assert "$and" in where
+        assert {"entity_type": "doc"} in where["$and"]
+        assert {"notion_id": {"$in": ["doc-001", "doc-002"]}} in where["$and"]
+
     def test_no_filter_omits_where(self, tmp_path):
         self.mock_collection.query.return_value = _make_query_result([], [], [])
 
