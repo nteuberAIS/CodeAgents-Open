@@ -27,6 +27,7 @@ def _make_settings(**overrides):
         "aider_timeout": 120,
         "aider_repo_dir": "/tmp/repo",
         "ollama_model": "qwen2.5-coder:7b",
+        "aider_edit_format": "udiff",
     }
     defaults.update(overrides)
     settings = MagicMock()
