@@ -63,6 +63,7 @@ class RAGRetriever:
         entity_types: list[str] | None = None,
         status: list[str] | None = None,
         sprint_id: str | None = None,
+        notion_ids: list[str] | None = None,
         score_threshold: float | None = None,
     ) -> list[dict]:
         """Query the vector DB for relevant content.
@@ -73,6 +74,8 @@ class RAGRetriever:
             entity_types: Filter to specific types (e.g., ["work_item", "doc"]).
             status: Filter to specific statuses (e.g., ["Ready", "In Progress"]).
             sprint_id: Filter to a specific sprint's content.
+            notion_ids: Filter to specific notion_ids (for composed queries
+                with SnapshotLookup — e.g. retrieve only linked docs).
             score_threshold: Minimum similarity score (0.0-1.0). None uses the
                 settings default; pass explicitly to override.
 
@@ -90,7 +93,7 @@ class RAGRetriever:
         )
 
         # Build where filter from non-None parameters
-        where = self._build_where(entity_types, status, sprint_id)
+        where = self._build_where(entity_types, status, sprint_id, notion_ids)
 
         query_kwargs: dict[str, Any] = {
             "query_texts": [text],
@@ -173,6 +176,7 @@ class RAGRetriever:
         entity_types: list[str] | None,
         status: list[str] | None,
         sprint_id: str | None,
+        notion_ids: list[str] | None = None,
     ) -> dict | None:
         """Build a ChromaDB where-filter dict from optional parameters."""
         filters: list[dict] = []
@@ -191,6 +195,12 @@ class RAGRetriever:
 
         if sprint_id:
             filters.append({"sprint_id": sprint_id})
+
+        if notion_ids:
+            if len(notion_ids) == 1:
+                filters.append({"notion_id": notion_ids[0]})
+            else:
+                filters.append({"notion_id": {"$in": notion_ids}})
 
         if not filters:
             return None

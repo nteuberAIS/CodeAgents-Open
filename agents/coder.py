@@ -47,6 +47,13 @@ class CoderAgent(BaseAgent):
             contains: instruction, modified_files, aider_output,
             iterations_used, dry_run.
         """
+        # 0. Parse task info for RAG/snapshot queries
+        self._current_task: dict = {}
+        try:
+            self._current_task = json.loads(user_input)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
         # 1. Check aider tool is available
         aider = self.get_tool("aider")
         if aider is None:
@@ -181,34 +188,80 @@ class CoderAgent(BaseAgent):
 
     def _format_context(self) -> str:
         """Format context data for the LLM system prompt."""
-        if not self.context:
-            return ""
-
         parts: list[str] = []
+        char_budget = self.MAX_CONTENT_CHARS
 
-        # Work items section
-        work_items = self.context.get("work_items", [])
-        if work_items:
-            items = work_items[: self.MAX_CONTENT_ITEMS]
-            parts.append("--- RELATED WORK ITEMS ---")
-            for item in items:
-                name = item.get("name", "Untitled")
-                status = item.get("status", "unknown")
-                desc = item.get("description", "")
-                parts.append(f"- {name} ({status}): {desc}")
+        # Static context from snapshot
+        if self.context:
+            work_items = self.context.get("work_items", [])
+            if work_items:
+                items = work_items[: self.MAX_CONTENT_ITEMS]
+                parts.append("--- RELATED WORK ITEMS ---")
+                for item in items:
+                    name = item.get("name", "Untitled")
+                    status = item.get("status", "unknown")
+                    desc = item.get("description", "")
+                    parts.append(f"- {name} ({status}): {desc}")
 
-        # Page content section
-        page_content = self.context.get("page_content", {})
-        if page_content:
-            parts.append("\n--- REFERENCE CONTENT ---")
-            for notion_id, content in list(page_content.items())[
-                : self.MAX_CONTENT_ITEMS
-            ]:
-                if len(content) > self.MAX_CONTENT_CHARS:
-                    content = content[: self.MAX_CONTENT_CHARS] + "\n... (truncated)"
-                parts.append(f"### {notion_id}")
-                parts.append(content)
-                parts.append("")
+            page_content = self.context.get("page_content", {})
+            if page_content:
+                parts.append("\n--- REFERENCE CONTENT ---")
+                for notion_id, content in list(page_content.items())[
+                    : self.MAX_CONTENT_ITEMS
+                ]:
+                    if len(content) > char_budget:
+                        content = content[:char_budget] + "\n... (truncated)"
+                    parts.append(f"### {notion_id}")
+                    parts.append(content)
+                    parts.append("")
+
+        # RAG semantic search for the current task
+        task_desc = self._current_task.get("description", "") if hasattr(self, "_current_task") else ""
+        task_id = self._current_task.get("notion_id", "") if hasattr(self, "_current_task") else ""
+
+        if self.rag and task_desc:
+            rag_results = self.retrieve(
+                task_desc, entity_types=["doc", "work_item"], top_k=3
+            )
+            if rag_results:
+                rag_section = self.rag.format_results(rag_results, max_chars=2000)
+                if rag_section:
+                    parts.append("\n--- RETRIEVED CONTEXT (semantically similar) ---")
+                    parts.append(rag_section)
+
+        # Snapshot relational lookups for linked docs and decisions
+        if self.snapshot and task_id:
+            linked_doc_ids = self.snapshot.get_related_ids(task_id, "doc_ids")
+            linked_decision_ids = self.snapshot.get_related_ids(task_id, "decision_ids")
+
+            # Composed query: RAG filtered to linked docs
+            if linked_doc_ids and self.rag and task_desc:
+                linked_results = self.retrieve(
+                    task_desc, notion_ids=linked_doc_ids, top_k=3
+                )
+                if linked_results:
+                    linked_section = self.rag.format_results(
+                        linked_results, max_chars=1500
+                    )
+                    if linked_section:
+                        parts.append("\n--- LINKED DOCUMENTS ---")
+                        parts.append(linked_section)
+
+            # Format linked decisions directly from snapshot
+            if linked_decision_ids:
+                decisions = [
+                    self.snapshot.get_entity(did)
+                    for did in linked_decision_ids
+                ]
+                decisions = [d for d in decisions if d is not None]
+                if decisions:
+                    parts.append("\n--- LINKED DECISIONS (ADRs) ---")
+                    for d in decisions:
+                        adr_id = d.get("adr_id", "")
+                        title = d.get("title", "Untitled")
+                        status_d = d.get("status", "?")
+                        prefix = f"[{adr_id}] " if adr_id else ""
+                        parts.append(f"- {prefix}{title} ({status_d})")
 
         return "\n".join(parts)
 

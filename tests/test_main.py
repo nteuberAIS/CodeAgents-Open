@@ -403,7 +403,7 @@ class TestCmdCascade:
         cmd_cascade(args)
 
         # Verify CascadeRunner was created with dry_run=True
-        mock_runner_cls.assert_called_once_with(settings, dry_run=True)
+        mock_runner_cls.assert_called_once_with(settings, dry_run=True, rag=None, snapshot=None)
 
     @patch("main.get_settings")
     def test_list_empty(self, mock_get_settings, tmp_path, capsys):

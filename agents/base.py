@@ -43,10 +43,11 @@ class BaseAgent(ABC):
     MAX_CONTENT_CHARS: int = 8000
     CONTENT_STATUSES: list[str] = ["Ready", "In Progress", "Backlog", "Active"]
 
-    def __init__(self, llm: ChatOllama, context: dict | None = None, *, rag: Any | None = None) -> None:
+    def __init__(self, llm: ChatOllama, context: dict | None = None, *, rag: Any | None = None, snapshot: Any | None = None) -> None:
         self.llm = llm
         self.context = context
         self.rag = rag
+        self.snapshot = snapshot  # SnapshotLookup instance
         self.tools: dict[str, Any] = {}
 
     def bind_tools(
@@ -119,6 +120,12 @@ class BaseAgent(ABC):
         if self.rag is None:
             return []
         return self.rag.query(query, **kwargs)
+
+    def lookup_relations(self, notion_id: str, relation_field: str) -> list[dict]:
+        """Relational query via snapshot. Returns [] if no snapshot."""
+        if self.snapshot is None:
+            return []
+        return self.snapshot.get_related(notion_id, relation_field)
 
     @classmethod
     def curate_context(

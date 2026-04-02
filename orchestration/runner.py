@@ -25,10 +25,14 @@ class CascadeRunner:
         self,
         settings: Any | None = None,
         dry_run: bool = False,
+        rag: Any | None = None,
+        snapshot: Any | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.dry_run = dry_run
-        self.graph = build_cascade_graph(self.settings, dry_run=dry_run)
+        self.graph = build_cascade_graph(
+            self.settings, dry_run=dry_run, rag=rag, snapshot=snapshot
+        )
 
     def run(
         self,
