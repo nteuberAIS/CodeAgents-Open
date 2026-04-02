@@ -43,11 +43,11 @@ class BaseAgent(ABC):
     MAX_CONTENT_CHARS: int = 8000
     CONTENT_STATUSES: list[str] = ["Ready", "In Progress", "Backlog", "Active"]
 
-    def __init__(self, llm: ChatOllama, context: dict | None = None) -> None:
+    def __init__(self, llm: ChatOllama, context: dict | None = None, *, rag: Any | None = None) -> None:
         self.llm = llm
         self.context = context
+        self.rag = rag
         self.tools: dict[str, Any] = {}
-        # Future: self.memory = None  — conversation / retrieval memory
 
     def bind_tools(
         self,
@@ -102,6 +102,23 @@ class BaseAgent(ABC):
     def has_tool(self, name: str) -> bool:
         """Check if a tool is successfully bound."""
         return self.tools.get(name) is not None
+
+    def retrieve(self, query: str, **kwargs: Any) -> list[dict]:
+        """Query the RAG retriever if available.
+
+        Returns empty list if no retriever is set.
+
+        Args:
+            query: Search text for semantic retrieval.
+            **kwargs: Passed through to RAGRetriever.query()
+                      (top_k, entity_types, status, sprint_id, score_threshold).
+
+        Returns:
+            List of result dicts from RAGRetriever.query(), or [].
+        """
+        if self.rag is None:
+            return []
+        return self.rag.query(query, **kwargs)
 
     @classmethod
     def curate_context(
