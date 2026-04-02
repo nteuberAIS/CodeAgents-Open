@@ -299,6 +299,44 @@ def cmd_benchmark(args) -> None:
     runner.print_summary(benchmark)
 
 
+def cmd_ingest(args) -> None:
+    """Handle the 'ingest' subcommand."""
+    settings = get_settings()
+    content_dir = Path(settings.data_dir) / "notion" / "content"
+    snapshot_dir = Path(settings.data_dir) / "notion"
+
+    if not content_dir.exists():
+        print("[Ingest] No content directory found. Run 'python main.py sync' first.")
+        sys.exit(1)
+
+    md_files = list(content_dir.glob("*.md"))
+    non_empty = [f for f in md_files if f.stat().st_size > 0]
+
+    if args.dry_run:
+        print(f"[Ingest] Dry run — would ingest {len(non_empty)} documents "
+              f"({len(md_files) - len(non_empty)} empty, skipped)")
+        print(f"[Ingest] Content dir: {content_dir}")
+        print(f"[Ingest] ChromaDB path: {settings.chroma_db_path}")
+        print(f"[Ingest] Embedding model: {settings.embedding_model}")
+        print(f"[Ingest] Chunk threshold: {settings.rag_chunk_size} chars")
+        if args.force:
+            print("[Ingest] --force: would delete and recreate collection")
+        return
+
+    from rag.ingest import ingest_notion_content
+
+    result = ingest_notion_content(
+        settings=settings,
+        content_dir=content_dir,
+        snapshot_dir=snapshot_dir,
+        force=args.force,
+    )
+    print(f"[Ingest] Done: {result['documents_ingested']} documents, "
+          f"{result['chunks_created']} chunks")
+    print(f"[Ingest] Collection: {result['collection_name']}")
+    print(f"[Ingest] ChromaDB path: {settings.chroma_db_path}")
+
+
 def cmd_cascade(args) -> None:
     """Handle the 'cascade' subcommand."""
     from datetime import datetime
@@ -475,6 +513,22 @@ def main() -> None:
         help="Show eval cases without running them.",
     )
 
+    # -- ingest subcommand --
+    ingest_parser = subparsers.add_parser(
+        "ingest",
+        help="Embed Notion content into ChromaDB for RAG.",
+    )
+    ingest_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-ingest from scratch (delete existing collection).",
+    )
+    ingest_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be ingested without embedding.",
+    )
+
     # -- cascade subcommand --
     cascade_parser = subparsers.add_parser(
         "cascade",
@@ -562,6 +616,8 @@ def main() -> None:
         cmd_sync(args)
     elif args.command == "run":
         cmd_run(args)
+    elif args.command == "ingest":
+        cmd_ingest(args)
     elif args.command == "cascade":
         cmd_cascade(args)
     elif args.command == "eval":

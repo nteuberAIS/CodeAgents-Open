@@ -12,6 +12,7 @@ Local, zero-cost AI agent system for sprint automation. Solo developer project.
 - `agents/` — Agent classes inheriting `BaseAgent` (ABC with LLM injection)
 - `tools/` — External tool wrappers (Notion sync, Notion write-back, Git providers, block renderer)
 - `schemas/` — Pydantic models (NOT `models/` — that's gitignored for Ollama cache)
+- `rag/` — RAG pipeline (ChromaDB ingestion, retriever — Phase 4)
 - `config/` — Settings, LLM factory, agent/tool registries
 - `data/notion/` — Local JSON snapshots from Notion sync
 - `prompts/` — Jinja2 prompt templates per agent (e.g., `sprint_planner/system.j2`)
@@ -38,6 +39,9 @@ python main.py run "Plan sprint 8"     # Run agent with prompt (auto-binds tools
 python main.py run "..." --sync        # Sync first, then run
 python main.py run "..." --no-tools    # LLM planning only, no tool execution
 python main.py run "..." --dry-run     # Show what would happen
+python main.py ingest                  # Embed Notion content into ChromaDB
+python main.py ingest --force          # Re-ingest from scratch (delete + rebuild)
+python main.py ingest --dry-run        # Show what would be ingested
 python main.py cascade "Deploy SHIR"          # Run full cascade (Planner→Coder→Tester→Updater)
 python main.py cascade "..." --dry-run        # Show what would happen
 python main.py cascade "..." --max-tasks 2    # Limit tasks processed
@@ -56,6 +60,7 @@ pytest tests/                                 # Run all tests
 ## Project Structure (cont.)
 - `orchestration/` — LangGraph cascade: graph definition, runner, state management
 - `data/cascade/` — Saved cascade run states (JSON)
+- `data/chroma/` — ChromaDB persistent vector storage (gitignored via `data/`)
 
 ## Current State
 - Phase 1 (Foundation): Complete
@@ -63,4 +68,5 @@ pytest tests/                                 # Run all tests
 - Phase 2.5 (Agent Quality Pass): Complete
 - Phase 2.6a–2.6b (Doc Cleanup, Benchmarking): Complete
 - Phase 3 (Multi-Agent Cascade): Complete
-- Next: Phase 4 (RAG & Context) — see docs/roadmap.md
+- Phase 4a (RAG Ingestion): In progress — ChromaDB + nomic-embed-text via Ollama
+- Next: Phase 4b (RAG Retriever) — see docs/roadmap.md

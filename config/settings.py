@@ -75,8 +75,12 @@ class Settings(BaseSettings):
     test_timeout: int = 300                          # Test subprocess timeout in seconds (5 min)
     test_repo_dir: str | None = None                 # Target repo for tests (falls back to aider_repo_dir)
 
-    # -- Future config hooks (uncomment as needed) --
-    # rag_retriever_path: str | None = None        # Path to local Notion mirror / vector DB
+    # -- RAG (Phase 4) --
+    chroma_db_path: Path = Path("data/chroma")
+    embedding_model: str = "nomic-embed-text"
+    rag_chunk_size: int = 4000           # Files under this stay as single document
+    rag_chunk_overlap: int = 200         # Overlap for secondary char-limit splits
+    rag_max_chunk_size: int = 4000       # Hard cap per chunk (nomic 8K tokens ≈ ~4K chars for dense content)
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
