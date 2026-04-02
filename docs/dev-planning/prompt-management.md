@@ -2,7 +2,7 @@
 
 > **Status**: Partially resolved — core templating implemented in Phase 2.5, remaining items deferred.
 > **Relevant Phase**: Phase 2+ (all agents depend on prompts)
-> **Last Updated**: 2026-03-27
+> **Last Updated**: 2026-04-01
 
 ---
 
@@ -44,7 +44,7 @@ Beyond git history, do we need:
 
 These are prompt-adjacent — they define how agents format their git output:
 
-- **Branch naming**: `sprint-{N}/{task-id}` (decided)
+- **Branch naming**: `task/sprint-{N}/{task-id}` (decided, updated Phase 3.5)
 - **Commit messages**: Structured format TBD (e.g., `[SP8-001] Add pipeline X`)
 - **PR titles**: Template TBD
 - **PR descriptions**: Template with task context, changes summary, test results
@@ -55,6 +55,11 @@ How do we ensure the Planner's output format matches what the Coder expects?
 - Shared output schemas?
 - Contract testing between agents?
 - Single source of truth for data structures (e.g., task schema)?
+
+> **Partially resolved (Phase 3a–3b):** AgentResult envelope (`schemas/agent_models.py`)
+> provides a standard return contract across all agents. SprintState TypedDict
+> (`schemas/sprint_state.py`) defines the cascade state contract. Per-agent output
+> validation remains open for Phase 6.
 
 ### 6. Domain-Specific Prompt Tuning
 
@@ -84,7 +89,7 @@ Phase 2.5 resolved core prompt management:
 
 - [x] Design prompt file format → Jinja2 `.j2` files in `prompts/`, loaded via `BaseAgent.load_prompt()`
 - [x] Define output schemas for each agent → SprintPlannerAgent returns structured dict
-- [ ] Create PR/commit message templates (Phase 3 — CoderAgent/UpdaterAgent)
-- [ ] Cross-agent output schemas / cascade contract (Phase 3)
+- [x] Cross-agent output schemas / cascade contract → AgentResult envelope + SprintState TypedDict (Phase 3a–3b)
+- [ ] Create PR/commit message templates (deferred — UpdaterAgent uses LLM-generated descriptions)
 - [ ] Prompt versioning / A/B testing (Phase 6)
 - [ ] Domain primer for data platform terminology (Phase 4 / RAG)

@@ -286,31 +286,28 @@ Four live runs executed with incremental fixes between each.
 
 ### Recommendations (ordered by priority)
 
-1. **Add commit+push step to cascade** — Insert between `code_node` and `test_node` (or at the end
-   of `code_node`). Use `git_tool.commit()` with the list of modified files from Aider, then
-   `git_tool.push()`. This unblocks end-to-end PR creation.
+1. **Add commit+push step to cascade** — ✅ **RESOLVED** (Phase 3.5): `commit_push_node` added
+   between `code_node` and `test_node`. Commits Aider's modified files and pushes to remote.
 
-2. **Fix branch naming convention** — Change task branches to `task/sprint-{N}/{task-id}` or
-   `sprint-{N}-tasks/{task-id}` to avoid ref collision with the sprint target branch.
+2. **Fix branch naming convention** — ✅ **RESOLVED** (Phase 3.5): Changed to
+   `task/sprint-{N}/{task-id}` to avoid ref collision with the sprint target branch `sprint-{N}`.
 
-3. **Improve CoderAgent prompt** — Update `prompts/coder/system.j2` to explicitly state that
-   instructions are for Aider editing local repository files, not Notion pages. Include examples
-   of good vs bad instructions.
+3. **Improve CoderAgent prompt** — ⏸️ **DEFERRED**: Skipped intentionally. Root cause was task
+   confusion (Notion page content vs repo files), not a prompt issue. Revisit post-RAG when
+   context curation improves.
 
-4. **Add Aider CLI flags** — Pass `--no-show-model-warnings` and `--no-gitignore` in `aider_tool.py`
-   to suppress browser opening and `.gitignore` modification.
+4. **Add Aider CLI flags** — ✅ **RESOLVED** (Phase 3.5): Added `--no-show-model-warnings`,
+   `--no-gitignore`, `--no-detect-urls`. Also added `--edit-format udiff` via new
+   `aider_edit_format` setting.
 
-5. **Set `OLLAMA_API_BASE` in Aider subprocess env** — In `aider_tool.py`, pass
-   `env={**os.environ, "OLLAMA_API_BASE": "http://localhost:11434"}` to the subprocess call.
+5. **Set `OLLAMA_API_BASE` in Aider subprocess env** — ❌ **DROPPED**: Rec 4 flags suppress the
+   model warning that prompted this workaround, making the env var unnecessary.
 
-6. **Add completion validation to check_node** — Verify that `modified_files` is non-empty and
-   `pr_created` is True before marking a task as "completed". Mark as "partial" or "needs-review"
-   if code was generated but PR creation failed.
+6. **Add completion validation to check_node** — ✅ **RESOLVED** (Phase 3.5): `check_node` now
+   warns when no files were changed or no PR was created.
 
-7. **Increase Aider output capture limit** — The 2000-char truncation in CoderAgent loses the
-   "Wrote path/to/file" lines. Increase to 4000+ chars or parse modified files from Aider output
-   before truncation.
+7. **Increase Aider output capture limit** — ✅ **RESOLVED** (Phase 3.5): Increased from 2000 to
+   4000 chars to preserve "Wrote path/to/file" lines.
 
-8. **Add structured logging for cascade runs** — Currently using `print()` for progress and
-   `logger.debug()` for errors (invisible). Add INFO-level logging for branch creation results,
-   Aider file modifications, and PR creation outcomes.
+8. **Add structured logging for cascade runs** — 🔲 **OPEN**: Deferred to Phase 6 (Production
+   Hardening). Currently using `print()` for progress and `logger.debug()` for errors.

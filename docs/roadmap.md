@@ -109,6 +109,22 @@
 - [x] `--list` and `--show` for viewing past runs
 - [x] Documentation updates (roadmap, architecture, project outline)
 
+## Phase 3.5: Live Validation & Fixes ✓
+- [x] First dry-run cascade on Sprint 1.4 (17 Notion tasks loaded, full pipeline exercised)
+- [x] First live cascade runs (4 runs against SynDataPlatform Azure DevOps repo)
+- [x] Fixed: `TEST_COMMAND=skip` sentinel check in TesterAgent
+- [x] Fixed: Windows `az.cmd` subprocess resolution + cmd.exe metacharacter sanitization
+- [x] Fixed: Missing `cwd` in git subprocess calls (all git ops ran in wrong repo)
+- [x] Added `commit_push_node` to cascade (commits Aider changes, pushes branch to remote)
+- [x] Fixed branch naming collision (`task/sprint-{N}/{task-id}` prefix)
+- [x] Added Aider CLI flags (`--no-show-model-warnings`, `--no-gitignore`, `--no-detect-urls`, `--edit-format udiff`)
+- [x] Added `aider_edit_format` setting (default: `udiff`)
+- [x] Increased Aider output capture from 2000 to 4000 chars
+- [x] Added completion validation in `check_node` (warns when no files changed or no PR created)
+- [x] Moved Notion loading out of cascade graph into CLI layer (`main.py`)
+- [x] Removed TaskPlannerAgent (premature, deferred to post-RAG)
+- [x] All findings documented in `docs/dev-planning/failure-modes.md`
+
 ## Phase 4: RAG & Context
 - [ ] Local Notion mirror (export → vector DB)
 - [ ] RAG retriever injected into agent prompts
