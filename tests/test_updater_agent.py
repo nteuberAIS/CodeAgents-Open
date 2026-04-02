@@ -387,11 +387,31 @@ class TestInputValidation:
 # -- Tests: PR URL extraction --
 
 class TestExtractPrUrl:
-    def test_extracts_url(self):
-        url = UpdaterAgent._extract_pr_url(
-            "Created PR: https://dev.azure.com/org/project/_git/repo/pullrequest/42"
-        )
-        assert url == "https://dev.azure.com/org/project/_git/repo/pullrequest/42"
+    def test_extracts_url_from_az_json(self):
+        """Realistic az repos pr create JSON — constructs web URL."""
+        az_output = json.dumps({
+            "pullRequestId": 154,
+            "title": "Add error handling",
+            "url": "https://dev.azure.com/org/proj/_apis/git/repositories/repo/pullRequests/154",
+            "createdBy": {
+                "displayName": "Agent",
+                "imageUrl": "https://dev.azure.com/org/_apis/GraphProfile/MemberAvatars/abc",
+            },
+            "repository": {
+                "webUrl": "https://dev.azure.com/org/proj/_git/repo",
+            },
+        })
+        url = UpdaterAgent._extract_pr_url(az_output)
+        assert url == "https://dev.azure.com/org/proj/_git/repo/pullrequest/154"
+
+    def test_falls_back_to_api_url(self):
+        """JSON with pullRequestId but no repository.webUrl — falls back to url field."""
+        az_output = json.dumps({
+            "pullRequestId": 42,
+            "url": "https://dev.azure.com/org/proj/_apis/git/repositories/repo/pullRequests/42",
+        })
+        url = UpdaterAgent._extract_pr_url(az_output)
+        assert url == "https://dev.azure.com/org/proj/_apis/git/repositories/repo/pullRequests/42"
 
     def test_no_url_returns_none(self):
         assert UpdaterAgent._extract_pr_url("No URL here") is None
@@ -399,7 +419,8 @@ class TestExtractPrUrl:
     def test_none_input_returns_none(self):
         assert UpdaterAgent._extract_pr_url(None) is None
 
-    def test_github_url(self):
+    def test_github_plain_url_fallback(self):
+        """Non-JSON output (GitHub CLI) — regex fallback."""
         url = UpdaterAgent._extract_pr_url(
             "https://github.com/org/repo/pull/123"
         )

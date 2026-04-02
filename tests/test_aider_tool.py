@@ -363,3 +363,58 @@ class TestParseModifiedFiles:
     def test_no_wrote_lines(self):
         output = "Thinking...\nNo changes needed.\nDone."
         assert AiderTool._parse_modified_files(output) == []
+
+    def test_parses_udiff_lines(self):
+        output = (
+            "Some aider output...\n"
+            "--- a/infra/modules/storage-alerts.bicep\n"
+            "+++ b/infra/modules/storage-alerts.bicep\n"
+            "@@ -0,0 +1,82 @@\n"
+            "+param location string\n"
+            "--- a/infra/main.bicep\n"
+            "+++ b/infra/main.bicep\n"
+            "@@ -10,6 +10,8 @@\n"
+            "+module storageAlerts\n"
+        )
+        result = AiderTool._parse_modified_files(output)
+        assert result == [
+            "infra/modules/storage-alerts.bicep",
+            "infra/main.bicep",
+        ]
+
+    def test_udiff_excludes_dev_null(self):
+        output = (
+            "--- a/old_file.py\n"
+            "+++ b/dev/null\n"
+            "--- /dev/null\n"
+            "+++ b/new_file.py\n"
+        )
+        result = AiderTool._parse_modified_files(output)
+        assert result == ["new_file.py"]
+
+    def test_mixed_wrote_and_udiff(self):
+        output = (
+            "Wrote src/main.py\n"
+            "--- a/src/main.py\n"
+            "+++ b/src/main.py\n"
+            "@@ -1,3 +1,5 @@\n"
+            "+import os\n"
+            "--- a/src/utils.py\n"
+            "+++ b/src/utils.py\n"
+            "@@ -1 +1,2 @@\n"
+            "+# new\n"
+        )
+        result = AiderTool._parse_modified_files(output)
+        # src/main.py appears in both Wrote and udiff — deduplicated
+        assert result == ["src/main.py", "src/utils.py"]
+
+    def test_ignores_minus_minus_minus_lines(self):
+        output = (
+            "--- a/src/deleted.py\n"
+            "+++ b/dev/null\n"
+            "--- a/src/changed.py\n"
+            "+++ b/src/changed.py\n"
+        )
+        result = AiderTool._parse_modified_files(output)
+        # Only +++ b/ lines (excluding /dev/null), never --- a/ lines
+        assert result == ["src/changed.py"]

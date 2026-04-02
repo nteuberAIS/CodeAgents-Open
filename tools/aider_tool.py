@@ -114,14 +114,27 @@ class AiderTool:
     def _parse_modified_files(output: str) -> list[str]:
         """Best-effort parse of modified file paths from Aider output.
 
-        Looks for lines like "Wrote path/to/file.py" which Aider emits
-        when it modifies files.
+        Handles two output formats:
+        - "Wrote path/to/file" lines (whole/diff edit formats)
+        - "+++ b/path/to/file" lines (udiff edit format)
+
+        Excludes /dev/null (deleted files) and deduplicates results.
         """
         if not output:
             return []
-        # Match "Wrote <path>" lines (Aider's standard output format)
-        matches = re.findall(r"^Wrote\s+(.+)$", output, re.MULTILINE)
-        return [m.strip() for m in matches]
+        # Pattern 1: "Wrote <path>" (whole/diff edit formats)
+        wrote = re.findall(r"^Wrote\s+(.+)$", output, re.MULTILINE)
+        # Pattern 2: "+++ b/<path>" (udiff edit format)
+        udiff = re.findall(r"^\+\+\+ b/(.+)$", output, re.MULTILINE)
+        udiff = [f for f in udiff if f.strip() != "dev/null"]
+        # Deduplicate, preserve order
+        seen: set[str] = set()
+        result: list[str] = []
+        for f in [m.strip() for m in wrote] + [m.strip() for m in udiff]:
+            if f not in seen:
+                seen.add(f)
+                result.append(f)
+        return result
 
     def edit(
         self,
