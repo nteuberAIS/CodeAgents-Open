@@ -293,8 +293,8 @@ Four live runs executed with incremental fixes between each.
    `task/sprint-{N}/{task-id}` to avoid ref collision with the sprint target branch `sprint-{N}`.
 
 3. **Improve CoderAgent prompt** — ⏸️ **DEFERRED**: Skipped intentionally. Root cause was task
-   confusion (Notion page content vs repo files), not a prompt issue. Revisit post-RAG when
-   context curation improves.
+   confusion (Notion page content vs repo files), not a prompt issue. RAG context is now active
+   (Phase 4c) — revisit if confusion recurs with enriched context.
 
 4. **Add Aider CLI flags** — ✅ **RESOLVED** (Phase 3.5): Added `--no-show-model-warnings`,
    `--no-gitignore`, `--no-detect-urls`. Also added `--edit-format udiff` via new
@@ -311,3 +311,98 @@ Four live runs executed with incremental fixes between each.
 
 8. **Add structured logging for cascade runs** — 🔲 **OPEN**: Deferred to Phase 6 (Production
    Hardening). Currently using `print()` for progress and `logger.debug()` for errors.
+
+---
+
+## Phase 4c — RAG Integration Validation (2026-04-02)
+
+Live cascade run against Sprint 1.4 (SynDataPlatform IaC repo on Azure DevOps).
+Target task: "Create ADLS capacity threshold metric alert" — chosen because it has 2 linked docs,
+testing the composed query pattern (snapshot provides doc IDs → RAG filters by those IDs).
+
+### What was tested
+
+- Full end-to-end cascade: plan → setup → code → commit_push → test → update → check
+- RAG semantic search (pure query against ChromaDB)
+- Snapshot relational lookups (get_related_ids for doc_ids)
+- Composed queries (snapshot IDs → RAG filter → linked doc content)
+- CoderAgent _format_context() integration with RAG + snapshot
+
+### What worked
+
+- **RAG retriever** — Semantic search returned relevant results (0.78–0.84 similarity for ADLS task)
+- **Snapshot relational lookup** — Correctly resolved 2 linked doc IDs from the task's doc_ids field
+- **Composed query** — RAG filtered to linked docs returned V1 Definition of Done content (0.53 similarity)
+- **CoderAgent context enrichment** — Generated instruction referencing actual repo paths
+  (infra/modules/storage-alerts.bicep, adf-alerts.bicep, main.bicep, ci-infra.yml),
+  the existing ADF alert pattern, the action group name (ag-sdp-ops-alerts-dev), and
+  Azure-specific details (UsedCapacity metric, severity 2, PT1H frequency)
+- **Aider code generation** — Created a full Bicep module (~82 lines) with correct Azure Monitor
+  resource types, naming conventions, and parameter patterns. Modified main.bicep to wire it in.
+  Completed in 1 LLM iteration (dry run took 2 iterations due to parse retry).
+- **Commit + push** — Clean push to task branch, cascade commit exists in SynDataPlatform
+- **PR creation** — Active PR created on Azure DevOps with correct title
+- **Notion update** — Task status updated to "In Review"
+- **ChromaDB ingestion** — 211 documents, 1,399 chunks ingested cleanly with --force rebuild
+
+### Issues found
+
+1. **Stale remote state from Phase 3.5** — Previous live runs left a remote task branch and open PR
+   on Azure DevOps. Push rejected (non-fast-forward) and PR creation failed (duplicate).
+   Not a Phase 4c issue — resolved by manually deleting remote branch and abandoning PR before re-run.
+
+2. **modified_files always empty** (Pre-existing, Phase 3.5 #12) — Aider output parser didn't
+   extract filenames from udiff diffs. The result dict reported `modified_files: []` even when
+   files were modified.
+   **Fix applied** (Phase 4c): `_parse_modified_files()` in `aider_tool.py` now parses both
+   `Wrote path/to/file` lines (whole/diff formats) and `+++ b/path/to/file` lines (udiff format),
+   with deduplication and `/dev/null` exclusion. Validated: correctly extracts filenames from udiff.
+
+3. **pr_url returns identity image URL** (Pre-existing) — UpdaterAgent's LLM parsed the az CLI
+   JSON output and extracted the wrong URL (Azure DevOps identity image instead of the PR URL).
+   **Fix applied** (Phase 4c): `_extract_pr_url()` in `updater.py` now parses the `az repos pr
+   create -o json` output as structured JSON, constructing the web URL from
+   `repository.webUrl + pullRequestId`. Falls back to regex for non-JSON output (GitHub CLI).
+   Validated: returned `https://dev.azure.com/.../pullrequest/176`.
+
+4. **Aider udiff applicator silently fails on new file creation** — Aider generates correct udiff
+   diffs (verified in `aider_output`) but fails to apply them to disk. For the ADLS task, Aider
+   created an empty `storage-alerts.bicep` placeholder, generated diffs for 4 files (storage-alerts,
+   main.bicep, ci-infra.yml, 08-monitoring.sh), but none were applied. The committed branch contains
+   only the empty file (0 insertions, 0 deletions). Root cause: Aider's udiff patch applicator
+   with `qwen2.5-coder:7b` — context lines in the diff may not match actual file content exactly
+   (whitespace, line wrapping), causing silent patch failure.
+   **Not yet fixed** — this is an Aider/model limitation, not a CodeAgents bug. Options:
+   - Try `diff` or `whole` edit format instead of `udiff` (may work better for new files)
+   - Upgrade to a larger model (14b+) that produces more accurate diffs
+   - Post-process: detect empty files after Aider runs and retry with `whole` format
+   - File a bug with Aider upstream if reproducible
+
+5. **`modified_files` reports planned files, not actually-written files** — Consequence of issue #4.
+   The parser correctly extracts filenames from Aider's output (`+++ b/` lines), but these reflect
+   what Aider *planned* to write, not what was actually written to disk. When Aider's patch
+   applicator fails silently, `modified_files` contains filenames for unchanged files.
+   **Not yet fixed** — could be addressed by cross-checking `modified_files` against `git status`
+   or `git diff --name-only` after Aider runs.
+
+### RAG quality observations
+
+- **Semantic search** is effective at finding the task's own content chunks (high similarity).
+- **Composed queries** return broader project docs (V1 DoD) at lower similarity (0.53), which
+  is expected — these are scope/standards documents, not task-specific content.
+- **The linked doc content meaningfully improved coder output** — the dry-run instruction referenced
+  specific patterns (adf-alerts.bicep), naming conventions, and deployment parameters that come
+  from the linked docs and RAG context, not just the task description.
+- **Observation**: Only one of the two linked docs appeared in composed query results. The second
+  doc may have content that doesn't match "ADLS capacity alert" semantically. This is acceptable —
+  RAG should filter by relevance even within linked docs.
+
+### Issues resolved this session
+
+- `modified_files` parser (Phase 3.5 #12) — ✅ **RESOLVED**: udiff `+++ b/` pattern now parsed
+- `pr_url` parser — ✅ **RESOLVED**: structured JSON parsing replaces LLM/regex extraction
+
+### Open issues
+
+- Aider udiff applicator silent failure (#4) — Aider/model limitation, needs investigation
+- `modified_files` accuracy (#5) — reports planned vs actual; needs git-status cross-check
