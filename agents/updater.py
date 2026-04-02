@@ -248,9 +248,24 @@ class UpdaterAgent(BaseAgent):
 
     @staticmethod
     def _extract_pr_url(output: str | None) -> str | None:
-        """Best-effort extraction of PR URL from git tool output."""
+        """Extract PR URL from git tool output.
+
+        Handles two formats:
+        - Azure DevOps: JSON from ``az repos pr create -o json`` —
+          constructs web URL from repository.webUrl + pullRequestId.
+        - GitHub / plain text: regex fallback for non-JSON output.
+        """
         if not output:
             return None
-        # Match common URL patterns
-        match = re.search(r"https?://\S+", output)
-        return match.group(0) if match else None
+        try:
+            data = json.loads(output)
+            pr_id = data.get("pullRequestId")
+            repo_web_url = data.get("repository", {}).get("webUrl", "")
+            if pr_id and repo_web_url:
+                return f"{repo_web_url}/pullrequest/{pr_id}"
+            # Fallback to API url field if webUrl missing
+            return data.get("url")
+        except (json.JSONDecodeError, TypeError):
+            # Non-JSON output (e.g. GitHub CLI returns a plain URL)
+            match = re.search(r"https?://\S+", output)
+            return match.group(0) if match else None
