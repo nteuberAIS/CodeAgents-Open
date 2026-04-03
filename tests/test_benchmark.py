@@ -219,7 +219,7 @@ class TestOllamaClient:
             assert info["parameter_size"] is None
             assert info["quantization_level"] is None
 
-    def test_pull_model(self, capsys):
+    def test_pull_model(self, caplog):
         client = OllamaClient()
         with patch("evals.benchmark.urllib.request.urlopen") as mock_open:
             mock_resp = MagicMock()
@@ -227,10 +227,10 @@ class TestOllamaClient:
             mock_resp.__exit__ = MagicMock(return_value=False)
             mock_resp.read.return_value = json.dumps({"status": "success"}).encode()
             mock_open.return_value = mock_resp
-            client.pull_model("test:7b")
-            captured = capsys.readouterr()
-            assert "Pulling test:7b" in captured.out
-            assert "test:7b ready" in captured.out
+            with caplog.at_level("INFO", logger="evals.benchmark"):
+                client.pull_model("test:7b")
+            assert "Pulling test:7b" in caplog.text
+            assert "test:7b ready" in caplog.text
 
 
 # -- TokenTracker tests --
@@ -646,7 +646,7 @@ class TestBenchmarkRunner:
 
 
 class TestCmdBenchmark:
-    def test_dry_run(self, capsys):
+    def test_dry_run(self, caplog):
         """Test --dry-run shows plan without running."""
         from main import cmd_benchmark
 
@@ -656,15 +656,15 @@ class TestCmdBenchmark:
         args.agent = "sprint_planner"
         args.dry_run = True
 
-        cmd_benchmark(args)
+        with caplog.at_level("INFO"):
+            cmd_benchmark(args)
 
-        captured = capsys.readouterr()
-        assert "Models (2)" in captured.out
-        assert "qwen2.5-coder:7b" in captured.out
-        assert "qwen3:8b" in captured.out
-        assert "Runs per model: 2" in captured.out
+        assert "Models (2)" in caplog.text
+        assert "qwen2.5-coder:7b" in caplog.text
+        assert "qwen3:8b" in caplog.text
+        assert "Runs per model: 2" in caplog.text
 
-    def test_dry_run_default_models(self, capsys):
+    def test_dry_run_default_models(self, caplog):
         from main import cmd_benchmark
 
         args = MagicMock()
@@ -673,10 +673,10 @@ class TestCmdBenchmark:
         args.agent = "sprint_planner"
         args.dry_run = True
 
-        cmd_benchmark(args)
+        with caplog.at_level("INFO"):
+            cmd_benchmark(args)
 
-        captured = capsys.readouterr()
-        assert f"Models ({len(DEFAULT_MODELS)})" in captured.out
+        assert f"Models ({len(DEFAULT_MODELS)})" in caplog.text
 
     @patch("evals.benchmark.BenchmarkRunner")
     def test_full_run_calls_runner(self, mock_runner_cls):

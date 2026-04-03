@@ -54,6 +54,8 @@ class CascadeRunner:
         Returns:
             The final SprintState after all nodes have executed.
         """
+        from config.logging_config import add_cascade_handler
+
         initial_state: SprintState = {
             "sprint_id": sprint_id,
             "plan": {"goal": goal},
@@ -68,12 +70,17 @@ class CascadeRunner:
             "max_tasks": max_tasks,
         }
 
-        final_state = self.graph.invoke(
-            initial_state,
-            config={"recursion_limit": 200},
-        )
-        self.print_summary(final_state)
-        return final_state
+        handler = add_cascade_handler(sprint_id)
+        try:
+            final_state = self.graph.invoke(
+                initial_state,
+                config={"recursion_limit": 200},
+            )
+            self.print_summary(final_state)
+            return final_state
+        finally:
+            logging.getLogger().removeHandler(handler)
+            handler.close()
 
     @staticmethod
     def format_escalation(
@@ -111,7 +118,7 @@ class CascadeRunner:
 
     @staticmethod
     def print_summary(state: SprintState) -> None:
-        """Print a human-readable execution summary."""
+        """Log a human-readable execution summary with structured data."""
         status = state.get("status", "unknown")
         tasks = state.get("tasks", [])
         failed = state.get("failed_task_ids", [])
@@ -124,27 +131,42 @@ class CascadeRunner:
             if "updater" in r and tid not in failed
         )
 
-        print("=" * 50)
-        print("CASCADE SUMMARY")
-        print("=" * 50)
-        print(f"Sprint:    {state.get('sprint_id', '?')}")
-        print(f"Status:    {status}")
-        print(f"Tasks:     {total} total, {completed} completed, {len(failed)} failed")
-
-        if failed:
-            print(f"Failed:    {', '.join(failed)}")
-
         # Count PRs created
         pr_count = sum(
             1 for r in results.values()
             if r.get("updater", {}).get("partial_output", {}).get("pr_created", False)
         )
+
+        # Build console-readable message
+        lines = [
+            "=" * 50,
+            "CASCADE SUMMARY",
+            "=" * 50,
+            f"Sprint:    {state.get('sprint_id', '?')}",
+            f"Status:    {status}",
+            f"Tasks:     {total} total, {completed} completed, {len(failed)} failed",
+        ]
+        if failed:
+            lines.append(f"Failed:    {', '.join(failed)}")
         if pr_count:
-            print(f"PRs:       {pr_count} created")
-
+            lines.append(f"PRs:       {pr_count} created")
         if errors:
-            print("Errors:")
+            lines.append("Errors:")
             for err in errors:
-                print(f"  - {err}")
+                lines.append(f"  - {err}")
+        lines.append("=" * 50)
 
-        print("=" * 50)
+        logger.info(
+            "\n".join(lines),
+            extra={
+                "event": "cascade_summary",
+                "sprint_id": state.get("sprint_id"),
+                "status": status,
+                "tasks_total": total,
+                "tasks_completed": completed,
+                "tasks_failed": len(failed),
+                "failed_task_ids": failed,
+                "prs_created": pr_count,
+                "errors": errors,
+            },
+        )
