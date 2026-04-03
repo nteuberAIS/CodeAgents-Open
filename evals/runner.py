@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import time
 from typing import Any, Callable
 
 from evals.base_eval import BaseEval, EvalResult
+
+logger = logging.getLogger(__name__)
 
 
 # Registry of eval suites — maps agent name to eval class import path
@@ -82,22 +85,25 @@ class EvalRunner:
         return results
 
     def print_report(self, results: list[EvalResult]) -> None:
-        """Print a human-readable eval report to stdout."""
+        """Log a human-readable eval report."""
         total_pass = sum(1 for r in results if r.overall_pass)
-        print(f"\n{'=' * 60}")
-        print(
-            f"Eval: {self.eval_suite.agent_name}"
-            f" — {total_pass}/{len(results)} cases passed"
-        )
-        print(f"{'=' * 60}\n")
 
+        lines = [
+            "=" * 60,
+            f"Eval: {self.eval_suite.agent_name}"
+            f" — {total_pass}/{len(results)} cases passed",
+            "=" * 60,
+            "",
+        ]
         for result in results:
             status = "PASS" if result.overall_pass else "FAIL"
-            print(
+            lines.append(
                 f"[{status}] {result.case_name}"
                 f" (score: {result.overall_score:.2f})"
             )
             for score in result.scores:
                 mark = "+" if score.passed else "-"
-                print(f"  [{mark}] {score.name}: {score.score:.2f} — {score.detail}")
-            print()
+                lines.append(f"  [{mark}] {score.name}: {score.score:.2f} — {score.detail}")
+            lines.append("")
+
+        logger.info("\n".join(lines))

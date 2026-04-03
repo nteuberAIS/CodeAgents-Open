@@ -91,9 +91,9 @@ class OllamaClient:
         return [m["name"] for m in data.get("models", [])]
 
     def pull_model(self, model_name: str) -> None:
-        print(f"  Pulling {model_name} ...")
+        logger.info("Pulling %s ...", model_name)
         self._post("/api/pull", {"name": model_name, "stream": False})
-        print(f"  {model_name} ready.")
+        logger.info("%s ready.", model_name)
 
     def get_model_info(self, model_name: str) -> dict:
         """Return parameter_size and quantization_level for a model."""
@@ -267,26 +267,24 @@ class BenchmarkRunner:
         model_results: list[ModelResult] = []
 
         for model_name in self.models:
-            print(f"\n{'=' * 60}")
-            print(f"Benchmarking: {model_name}")
-            print(f"{'=' * 60}")
+            logger.info("Benchmarking: %s", model_name)
 
             # Get model metadata
             info = self.client.get_model_info(model_name)
 
             runs: list[SingleRunResult] = []
             for run_idx in range(self.num_runs):
-                print(f"  Run {run_idx + 1}/{self.num_runs} ...", end=" ", flush=True)
+                logger.info("  Run %d/%d starting for %s", run_idx + 1, self.num_runs, model_name)
                 try:
                     result = self._run_single(
                         model_name, eval_suite, agent_cls, run_idx,
                     )
                     runs.append(result)
                     avg = sum(c.overall_score for c in result.case_results) / len(result.case_results)
-                    print(f"avg_score={avg:.2f}  time={result.total_elapsed_seconds:.1f}s")
+                    logger.info("  Run %d/%d complete: avg_score=%.2f time=%.1fs",
+                                run_idx + 1, self.num_runs, avg, result.total_elapsed_seconds)
                 except Exception as e:
                     logger.warning("Run %d for %s failed: %s", run_idx, model_name, e)
-                    print(f"FAILED: {e}")
                     # Record an empty failed run
                     runs.append(SingleRunResult(
                         run_index=run_idx,
@@ -378,14 +376,12 @@ class BenchmarkRunner:
             _render_markdown(benchmark), encoding="utf-8",
         )
 
-        print(f"\nResults saved:")
-        print(f"  JSON: {json_path}")
-        print(f"  Summary: {md_path}")
+        logger.info("Results saved: JSON=%s, Summary=%s", json_path, md_path)
         return json_path, md_path
 
     def print_summary(self, benchmark: BenchmarkRun) -> None:
-        """Print the markdown comparison table to stdout."""
-        print(_render_markdown(benchmark))
+        """Log the markdown comparison table."""
+        logger.info("Benchmark summary:\n%s", _render_markdown(benchmark))
 
 
 # ---------------------------------------------------------------------------

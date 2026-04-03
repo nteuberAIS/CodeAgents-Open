@@ -62,7 +62,7 @@ def plan_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
     """
     sprint_id = state["sprint_id"]
     tasks = state.get("tasks", [])
-    print(f"[cascade] plan: {len(tasks)} tasks for sprint {sprint_id}")
+    logger.info("plan: %d tasks for sprint %s", len(tasks), sprint_id)
 
     if not tasks:
         return {
@@ -117,7 +117,7 @@ def setup_task_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict
 
     sprint_prefix = _sprint_branch_prefix(state["sprint_id"])
     task_id = task["id"]
-    print(f"[cascade] setup: preparing branch for {task_id} — {task.get('title', '')}")
+    logger.info("setup: preparing branch for %s — %s", task_id, task.get('title', ''))
 
     # Try to create and checkout a task branch (non-fatal on failure)
     for provider in ("github", "azdevops"):
@@ -146,7 +146,7 @@ def code_node(state: SprintState, *, settings: Any, dry_run: bool, rag: Any = No
         return {"errors": [], "failed_task_ids": []}
 
     task_id = task["id"]
-    print(f"[cascade] code: running CoderAgent on {task_id} — {task.get('title', '')}")
+    logger.info("code: running CoderAgent on %s — %s", task_id, task.get('title', ''))
 
     # Build task input
     task_input = dict(task)
@@ -268,7 +268,7 @@ def commit_push_node(state: SprintState, *, settings: Any, dry_run: bool) -> dic
         updated_results[task_id] = task_entry
         return {"task_results": updated_results, "errors": [], "failed_task_ids": []}
 
-    print(f"[cascade] commit_push: committed and pushed {branch_name}")
+    logger.info("commit_push: committed and pushed %s", branch_name)
 
     # Record success
     updated_results = dict(state.get("task_results", {}))
@@ -286,7 +286,7 @@ def test_node(state: SprintState, *, settings: Any, dry_run: bool, rag: Any = No
         return {"errors": [], "failed_task_ids": []}
 
     task_id = task["id"]
-    print(f"[cascade] test: running TesterAgent on {task_id}")
+    logger.info("test: running TesterAgent on %s", task_id)
     test_input = {
         "task_id": task_id,
         "task_title": task.get("title", ""),
@@ -332,7 +332,7 @@ def update_node(state: SprintState, *, settings: Any, dry_run: bool, rag: Any = 
 
     task_id = task["id"]
     sprint_prefix = _sprint_branch_prefix(state["sprint_id"])
-    print(f"[cascade] update: creating PR for {task_id} — {task.get('title', '')}")
+    logger.info("update: creating PR for %s — %s", task_id, task.get('title', ''))
 
     # Build updater input from task + accumulated results
     coder_result = state.get("task_results", {}).get(task_id, {}).get("coder", {})
@@ -394,7 +394,7 @@ def check_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
     """Advance to next task, check abort threshold, update status."""
     task = get_current_task(state)
     if task:
-        print(f"[cascade] check: task {task['id']} done, advancing")
+        logger.info("check: task %s done, advancing", task['id'])
     new_errors: list[str] = []
     new_failed: list[str] = []
 

@@ -406,20 +406,20 @@ class TestCmdCascade:
         mock_runner_cls.assert_called_once_with(settings, dry_run=True, rag=None, snapshot=None)
 
     @patch("main.get_settings")
-    def test_list_empty(self, mock_get_settings, tmp_path, capsys):
+    def test_list_empty(self, mock_get_settings, tmp_path, caplog):
         """--list with no saved runs prints 'No saved runs'."""
         settings = _make_settings()
         settings.data_dir = str(tmp_path)
         mock_get_settings.return_value = settings
 
         args = _cascade_args(prompt=None, **{"list": True})
-        cmd_cascade(args)
+        with caplog.at_level("INFO"):
+            cmd_cascade(args)
 
-        output = capsys.readouterr().out
-        assert "No saved runs" in output
+        assert "No saved runs" in caplog.text
 
     @patch("main.get_settings")
-    def test_list_shows_saved_runs(self, mock_get_settings, tmp_path, capsys):
+    def test_list_shows_saved_runs(self, mock_get_settings, tmp_path, caplog):
         """--list displays saved cascade run files."""
         settings = _make_settings()
         settings.data_dir = str(tmp_path)
@@ -431,15 +431,15 @@ class TestCmdCascade:
         (cascade_dir / "sprint-8.json").write_text(json.dumps(state))
 
         args = _cascade_args(prompt=None, **{"list": True})
-        cmd_cascade(args)
+        with caplog.at_level("INFO"):
+            cmd_cascade(args)
 
-        output = capsys.readouterr().out
-        assert "sprint-8" in output
-        assert "completed" in output
-        assert "tasks=2" in output
+        assert "sprint-8" in caplog.text
+        assert "completed" in caplog.text
+        assert "tasks=2" in caplog.text
 
     @patch("main.get_settings")
-    def test_show_displays_state(self, mock_get_settings, tmp_path, capsys):
+    def test_show_displays_state(self, mock_get_settings, tmp_path, caplog):
         """--show reads and prints saved state JSON."""
         settings = _make_settings()
         settings.data_dir = str(tmp_path)
@@ -451,10 +451,10 @@ class TestCmdCascade:
         (cascade_dir / "sprint-8.json").write_text(json.dumps(state))
 
         args = _cascade_args(prompt=None, show="sprint-8")
-        cmd_cascade(args)
+        with caplog.at_level("INFO"):
+            cmd_cascade(args)
 
-        output = capsys.readouterr().out
-        assert '"sprint_id": "sprint-8"' in output
+        assert '"sprint_id": "sprint-8"' in caplog.text
 
     @patch("main.get_settings")
     def test_show_missing_exits(self, mock_get_settings, tmp_path):

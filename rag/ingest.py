@@ -9,9 +9,12 @@ Ollama's nomic-embed-text model.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "notion_content"
 
@@ -124,7 +127,7 @@ def ingest_notion_content(
     if force:
         try:
             client.delete_collection(COLLECTION_NAME)
-            print(f"[Ingest] Deleted existing collection '{COLLECTION_NAME}'")
+            logger.info("Deleted existing collection '%s'", COLLECTION_NAME)
         except ValueError:
             pass  # Collection doesn't exist
 
@@ -148,7 +151,7 @@ def ingest_notion_content(
             embeddings=embeddings,
             metadatas=[c["metadata"] for c in batch],
         )
-        print(f"[Ingest] Embedded {min(i + batch_size, len(all_chunks))}/{len(all_chunks)} chunks")
+        logger.info("Embedded %d/%d chunks", min(i + batch_size, len(all_chunks)), len(all_chunks))
 
     return {
         "documents_ingested": docs_ingested,

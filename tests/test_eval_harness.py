@@ -243,7 +243,7 @@ class TestEvalRunner:
             assert result.agent_output["success"] is False
             assert result.agent_output["error_type"] == "infra"
 
-    def test_print_report_runs_without_error(self, capsys):
+    def test_print_report_runs_without_error(self, caplog):
         suite = SprintPlannerEval()
         runner = EvalRunner(suite)
 
@@ -256,11 +256,11 @@ class TestEvalRunner:
                 overall_score=1.0,
             ),
         ]
-        runner.print_report(results)
+        with caplog.at_level("INFO"):
+            runner.print_report(results)
 
-        captured = capsys.readouterr()
-        assert "sprint_planner" in captured.out
-        assert "PASS" in captured.out
+        assert "sprint_planner" in caplog.text
+        assert "PASS" in caplog.text
 
 
 # -- Registry tests --

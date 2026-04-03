@@ -84,6 +84,11 @@ class Settings(BaseSettings):
     rag_top_k: int = 5                   # Default number of retrieval results
     rag_score_threshold: float | None = None  # Min similarity score (None = no filter)
 
+    # -- Logging (Phase 5a) --
+    log_level: str = "INFO"
+    log_file: str = "data/logs/codeagents.jsonl"
+    log_json: bool = True
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
