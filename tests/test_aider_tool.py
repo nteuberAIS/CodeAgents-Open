@@ -281,6 +281,20 @@ class TestAiderToolFailures:
 # ------------------------------------------------------------------ #
 
 
+class TestAiderToolEnvironment:
+    @patch("tools.aider_tool.subprocess.run")
+    def test_edit_sets_term_to_dumb(self, mock_run):
+        """Regression: TERM=xterm-256color crashes Aider's prompt_toolkit on Windows."""
+        mock_run.return_value = _mock_subprocess_result(
+            stdout="Wrote a.py\n", returncode=0
+        )
+        with patch.object(AiderTool, "_validate_cli"):
+            tool = AiderTool(_make_settings(), dry_run=False)
+        tool.edit(instruction="Fix it", files=["a.py"])
+        env = mock_run.call_args.kwargs["env"]
+        assert env["TERM"] == "dumb"
+
+
 class TestAiderToolCommandConstruction:
     def test_required_flags_present(self):
         tool = AiderTool(_make_settings(), dry_run=True)
@@ -407,6 +421,26 @@ class TestParseModifiedFiles:
         result = AiderTool._parse_modified_files(output)
         # src/main.py appears in both Wrote and udiff — deduplicated
         assert result == ["src/main.py", "src/utils.py"]
+
+    def test_parses_applied_edit_lines(self):
+        """Regression: diff/whole format uses 'Applied edit to' not 'Wrote'."""
+        output = (
+            "Thinking...\n"
+            "Applied edit to infra\\modules\\storage-alerts.bicep\n"
+            "Applied edit to infra\\main.bicep\n"
+            "Tokens: 3.2k sent, 142 received.\n"
+        )
+        result = AiderTool._parse_modified_files(output)
+        assert "infra\\modules\\storage-alerts.bicep" in result
+        assert "infra\\main.bicep" in result
+
+    def test_mixed_applied_and_wrote(self):
+        output = (
+            "Wrote src/a.py\n"
+            "Applied edit to src/b.py\n"
+        )
+        result = AiderTool._parse_modified_files(output)
+        assert result == ["src/a.py", "src/b.py"]
 
     def test_ignores_minus_minus_minus_lines(self):
         output = (

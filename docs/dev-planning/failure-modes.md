@@ -406,3 +406,21 @@ testing the composed query pattern (snapshot provides doc IDs → RAG filters by
 
 - Aider udiff applicator silent failure (#4) — Aider/model limitation, needs investigation
 - `modified_files` accuracy (#5) — reports planned vs actual; needs git-status cross-check
+
+---
+
+## Phase 5b Live Validation (2026-04-03)
+
+Full findings in `phase-5b-findings.md`. Key bugs found and fixed:
+
+1. **TERM=xterm-256color crashes Aider** — Fixed: `TERM=dumb` in subprocess env
+2. **False success on empty Aider results** — Fixed: check `modified_files` not just exit code
+3. **Code failure routes to wrong task** — Fixed: `route_after_code()` + direct index in `check_node`
+4. **`_parse_modified_files` misses diff format** — Fixed: added `"Applied edit to"` pattern
+5. **Unicode crash in Aider** — Fixed: `PYTHONIOENCODING=utf-8` in subprocess env
+
+### Open issues (Phase 5b)
+
+- Non-code tasks exhaust all 5 retries (~3-12 min wasted per task)
+- No task-type classification to skip non-automatable tasks
+- Local main must be up-to-date with remote before cascade runs

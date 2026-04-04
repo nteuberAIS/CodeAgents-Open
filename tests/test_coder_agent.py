@@ -472,6 +472,45 @@ class TestRunEdgeCases:
         assert result["success"] is True
         assert result["partial_output"]["aider_output"] is None
 
+    def test_aider_success_no_modified_files_retries(self):
+        """Regression: Aider exit 0 with no files modified should retry, not succeed."""
+        llm = _make_llm_sequence([VALID_CODER_JSON] * 5)
+        # Build AiderResult directly to avoid _make_aider_result's falsy-[] default
+        empty_result = AiderResult(
+            command="aider --message ...",
+            success=True,
+            output="No changes needed",
+            error=None,
+            modified_files=[],
+            dry_run=False,
+        )
+        agent = _make_agent_with_aider(
+            llm=llm,
+            aider_side_effect=[empty_result for _ in range(5)],
+        )
+        result = agent.run(TASK_INPUT)
+
+        assert result["success"] is False
+        assert "no files were modified" in result["partial_output"]["last_error"].lower()
+        # LLM should have been called MAX_ITERATIONS times (retries on empty result)
+        assert llm.invoke.call_count == 5
+
+    def test_aider_success_no_modified_files_dry_run_still_succeeds(self):
+        """Dry-run with no files is expected — should still succeed."""
+        agent = _make_agent_with_aider(
+            llm=_make_llm(VALID_CODER_JSON),
+            aider_result=_make_aider_result(
+                success=True,
+                output=None,
+                modified_files=[],
+                dry_run=True,
+            ),
+        )
+        result = agent.run(TASK_INPUT)
+
+        assert result["success"] is True
+        assert result["partial_output"]["dry_run"] is True
+
     def test_aider_error_uses_output_as_fallback(self):
         """When error is None, output is used as the error context."""
         llm = _make_llm_sequence([VALID_CODER_JSON] * 5)
