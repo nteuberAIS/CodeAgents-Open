@@ -35,3 +35,6 @@ data/
 
 # Eval run outputs
 evals/results/
+
+docs/prompts/
+.aider*

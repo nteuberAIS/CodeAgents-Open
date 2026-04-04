@@ -392,7 +392,12 @@ def update_node(state: SprintState, *, settings: Any, dry_run: bool, rag: Any = 
 
 def check_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
     """Advance to next task, check abort threshold, update status."""
-    task = get_current_task(state)
+    # Use the task at current_task_index directly — do NOT use
+    # get_current_task() which skips failed tasks and would validate
+    # the wrong task when entering from a code failure route.
+    tasks = state["tasks"]
+    idx = state["current_task_index"]
+    task = tasks[idx] if idx < len(tasks) else None
     if task:
         logger.info("check: task %s done, advancing", task['id'])
     new_errors: list[str] = []
@@ -400,31 +405,34 @@ def check_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
 
     if task is not None:
         task_id = task["id"]
-        # Check if current task actually passed
-        tester_result = state.get("task_results", {}).get(task_id, {}).get("tester", {})
-        test_passed = tester_result.get("partial_output", {}).get("test_passed", False)
-        tester_success = tester_result.get("success", False)
 
-        # If task didn't reach updater (routed here from failed test), mark failed
-        updater_result = state.get("task_results", {}).get(task_id, {}).get("updater")
-        if updater_result is None and task_id not in state.get("failed_task_ids", []):
-            if not test_passed or not tester_success:
-                error = f"Task {task_id} failed: tests did not pass after retries"
-                new_errors.append(error)
-                new_failed.append(task_id)
+        # Skip validation for tasks already marked failed (e.g. coder failure)
+        if task_id not in state.get("failed_task_ids", []):
+            # Check if current task actually passed
+            tester_result = state.get("task_results", {}).get(task_id, {}).get("tester", {})
+            test_passed = tester_result.get("partial_output", {}).get("test_passed", False)
+            tester_success = tester_result.get("success", False)
 
-        # Completion validation — warn if no meaningful work was done
-        coder_result = state.get("task_results", {}).get(task_id, {}).get("coder", {})
-        modified_files = coder_result.get("partial_output", {}).get("modified_files", [])
-        pr_created = (
-            updater_result.get("partial_output", {}).get("pr_created", False)
-            if updater_result else False
-        )
-        if not modified_files and not pr_created and task_id not in state.get("failed_task_ids", []):
-            new_errors.append(
-                f"Task {task_id} completed with no file changes and no PR"
-                " — may need manual review"
+            # If task didn't reach updater (routed here from failed test), mark failed
+            updater_result = state.get("task_results", {}).get(task_id, {}).get("updater")
+            if updater_result is None:
+                if not test_passed or not tester_success:
+                    error = f"Task {task_id} failed: tests did not pass after retries"
+                    new_errors.append(error)
+                    new_failed.append(task_id)
+
+            # Completion validation — warn if no meaningful work was done
+            coder_result = state.get("task_results", {}).get(task_id, {}).get("coder", {})
+            modified_files = coder_result.get("partial_output", {}).get("modified_files", [])
+            pr_created = (
+                updater_result.get("partial_output", {}).get("pr_created", False)
+                if updater_result else False
             )
+            if not modified_files and not pr_created:
+                new_errors.append(
+                    f"Task {task_id} completed with no file changes and no PR"
+                    " — may need manual review"
+                )
 
     # Advance to next task
     new_index = state["current_task_index"] + 1
@@ -464,6 +472,24 @@ def check_node(state: SprintState, *, settings: Any, dry_run: bool) -> dict:
 # ---------------------------------------------------------------------------
 # Routing functions
 # ---------------------------------------------------------------------------
+
+def route_after_code(state: SprintState) -> str:
+    """Route after code_node: skip to check if coder failed."""
+    task = get_current_task(state)
+    if task is None:
+        # get_current_task skips failed tasks — if None, all remaining failed
+        return "check_node"
+    # If the task that just ran code_node is already in failed_task_ids,
+    # get_current_task would have skipped it and returned the NEXT task.
+    # We need to check the task at the current index directly.
+    tasks = state["tasks"]
+    idx = state["current_task_index"]
+    if idx < len(tasks):
+        current_id = tasks[idx].get("id")
+        if current_id in state.get("failed_task_ids", []):
+            return "check_node"
+    return "commit_push_node"
+
 
 def route_after_plan(state: SprintState) -> str:
     """Route after plan_node: proceed to tasks or end."""
@@ -551,7 +577,7 @@ def build_cascade_graph(settings: Any, dry_run: bool = False, rag: Any = None, s
     graph.add_edge(START, "plan_node")
     graph.add_conditional_edges("plan_node", route_after_plan)
     graph.add_edge("setup_task_node", "code_node")
-    graph.add_edge("code_node", "commit_push_node")
+    graph.add_conditional_edges("code_node", route_after_code)
     graph.add_edge("commit_push_node", "test_node")
     graph.add_conditional_edges("test_node", route_after_test)
     graph.add_edge("update_node", "check_node")

@@ -16,7 +16,11 @@ import re
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+import logging
+
 from agents.base import BaseAgent
+
+logger = logging.getLogger(__name__)
 
 
 class CoderAgent(BaseAgent):
@@ -134,9 +138,18 @@ class CoderAgent(BaseAgent):
             last_instruction = instruction
 
             # Call Aider
+            logger.info(
+                "coder iteration %d: files=%s, instruction=%.100s",
+                iteration, files, instruction,
+            )
             result = aider.edit(instruction=instruction, files=files)
+            logger.info(
+                "coder iteration %d: success=%s, modified=%s, output_len=%s",
+                iteration, result.success, result.modified_files,
+                len(result.output) if result.output else 0,
+            )
 
-            if result.success:
+            if result.success and (result.modified_files or result.dry_run):
                 return self.wrap_result(
                     success=True,
                     partial_output={
@@ -148,8 +161,27 @@ class CoderAgent(BaseAgent):
                     },
                 )
 
-            # Aider failed — retry with error context
-            last_error = result.error or result.output or "Unknown Aider error"
+            # Aider reported success but modified nothing — treat as failure
+            if result.success and not result.modified_files:
+                last_error = (
+                    "Aider exited successfully but no files were modified. "
+                    "The instruction may not match any existing files."
+                )
+                if iteration < self.MAX_ITERATIONS:
+                    messages.append(AIMessage(content=raw))
+                    messages.append(HumanMessage(
+                        content=(
+                            f"{last_error}\n\n"
+                            "Please revise your instruction and file list. "
+                            "Ensure the file paths exist in the repo. "
+                            "Return ONLY a JSON object with "
+                            "'instruction' and 'files' keys."
+                        ),
+                    ))
+                    continue
+            else:
+                # Aider failed — retry with error context
+                last_error = result.error or result.output or "Unknown Aider error"
             if iteration < self.MAX_ITERATIONS:
                 messages.append(AIMessage(content=raw))
                 messages.append(HumanMessage(
@@ -167,6 +199,9 @@ class CoderAgent(BaseAgent):
             partial_output={
                 "last_instruction": last_instruction,
                 "last_error": last_error,
+                "aider_output": self._truncate(
+                    result.output if result else None, 4000
+                ),
                 "iterations_used": self.MAX_ITERATIONS,
             },
             error_type="tool",

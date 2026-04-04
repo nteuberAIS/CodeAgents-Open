@@ -8,6 +8,7 @@ import the aider package directly.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from typing import Any
@@ -122,15 +123,17 @@ class AiderTool:
         """
         if not output:
             return []
-        # Pattern 1: "Wrote <path>" (whole/diff edit formats)
+        # Pattern 1: "Wrote <path>" (whole edit format)
         wrote = re.findall(r"^Wrote\s+(.+)$", output, re.MULTILINE)
         # Pattern 2: "+++ b/<path>" (udiff edit format)
         udiff = re.findall(r"^\+\+\+ b/(.+)$", output, re.MULTILINE)
         udiff = [f for f in udiff if f.strip() != "dev/null"]
+        # Pattern 3: "Applied edit to <path>" (diff/whole edit formats)
+        applied = re.findall(r"^Applied edit to (.+)$", output, re.MULTILINE)
         # Deduplicate, preserve order
         seen: set[str] = set()
         result: list[str] = []
-        for f in [m.strip() for m in wrote] + [m.strip() for m in udiff]:
+        for f in [m.strip() for m in wrote] + [m.strip() for m in udiff] + [m.strip() for m in applied]:
             if f not in seen:
                 seen.add(f)
                 result.append(f)
@@ -171,12 +174,18 @@ class AiderTool:
             )
 
         try:
+            # Override TERM to avoid prompt_toolkit crash on Windows
+            # when the parent shell sets TERM=xterm-256color
+            env = os.environ.copy()
+            env["TERM"] = "dumb"
+            env["PYTHONIOENCODING"] = "utf-8"
             result = subprocess.run(
                 cmd,
                 cwd=cwd,
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
+                env=env,
             )
             modified = self._parse_modified_files(result.stdout)
             return AiderResult(
